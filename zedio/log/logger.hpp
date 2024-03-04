@@ -180,6 +180,11 @@ private:
                 // if (full_buffers_.empty()) {
                 // cond_.wait_for(lock, std::chrono::seconds(3));
                 // }
+
+                if (full_buffers_.empty() && current_buffer_->empty()) [[unlikely]] {
+                    continue;
+                }
+
                 full_buffers_.push_back(std::move(current_buffer_));
                 if (!empty_buffers_.empty()) {
                     current_buffer_ = std::move(empty_buffers_.front());
