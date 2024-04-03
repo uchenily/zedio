@@ -14,8 +14,8 @@ template <typename Stream, typename Addr>
 class LengthLimitedCodec {
 public:
     auto Decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
-        char msg_len[4];
-        auto ret = co_await reader.read_exact(msg_len);
+        std::array<char, 4> msg_len{};
+        auto                ret = co_await reader.read_exact({msg_len.data(), msg_len.size()});
         if (!ret) {
             console.error("decode error: {}", ret.error().message());
             co_return std::string{};
@@ -32,17 +32,17 @@ public:
         co_return message;
     }
 
-    auto Encode(const std::span<const char> &message, BaseStream<Stream, Addr>::OwnedWriter &writer)
+    auto Encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
         -> Task<void> {
-        char     msg_len[4];
-        uint32_t length = message.size();
+        std::array<char, 4> msg_len{};
+        uint32_t            length = message.size();
 
         msg_len[3] = length & 0xFF;
         msg_len[2] = (length >> 8) & 0xFF;
         msg_len[1] = (length >> 16) & 0xFF;
         msg_len[0] = (length >> 24) & 0xFF;
 
-        auto ret = co_await writer.write_all(msg_len);
+        auto ret = co_await writer.write_all({msg_len.data(), msg_len.size()});
         if (!ret) {
             console.error("encode error: {}", ret.error().message());
             co_return;
@@ -67,12 +67,10 @@ public:
 public:
     auto Send(std::span<const char> message) -> Task<void> {
         co_await codec_.Encode(message, writer_);
-        console.info("send succ");
     }
 
     auto Recv() -> Task<std::string> {
         auto message = co_await codec_.Decode(reader_);
-        console.info("recv succ");
         co_return message;
     }
 
