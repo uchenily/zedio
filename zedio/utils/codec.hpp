@@ -10,12 +10,26 @@ using namespace zedio::async;
 using namespace zedio::socket::detail;
 using namespace zedio;
 
-template <typename Stream, typename Addr>
-class LengthLimitedCodec {
+template <typename Derived, typename Stream, typename Addr>
+class Codec {
 public:
     auto Decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
-        std::array<char, 4> msg_len{};
-        auto                ret = co_await reader.read_exact({msg_len.data(), msg_len.size()});
+        co_return co_await static_cast<Derived *>(this)->decode(reader);
+    }
+
+    auto Encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
+        -> Task<void> {
+        co_await static_cast<Derived *>(this)->encode(message, writer);
+    }
+};
+
+template <typename Stream, typename Addr>
+class LengthLimitedCodec : public Codec<LengthLimitedCodec<Stream, Addr>, Stream, Addr> {
+public:
+    auto decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
+        std::array<unsigned char, 4> msg_len{};
+        auto                         ret = co_await reader.read_exact(
+            {reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
         if (!ret) {
             console.error("decode error: {}", ret.error().message());
             co_return std::string{};
@@ -32,17 +46,18 @@ public:
         co_return message;
     }
 
-    auto Encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
+    auto encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
         -> Task<void> {
-        std::array<char, 4> msg_len{};
-        uint32_t            length = message.size();
+        std::array<unsigned char, 4> msg_len{};
+        uint32_t                     length = message.size();
 
         msg_len[3] = length & 0xFF;
         msg_len[2] = (length >> 8) & 0xFF;
         msg_len[1] = (length >> 16) & 0xFF;
         msg_len[0] = (length >> 24) & 0xFF;
 
-        auto ret = co_await writer.write_all({msg_len.data(), msg_len.size()});
+        auto ret
+            = co_await writer.write_all({reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
         if (!ret) {
             console.error("encode error: {}", ret.error().message());
             co_return;
@@ -56,7 +71,9 @@ public:
     }
 };
 
-template <class Stream = TcpStream, class Addr = SocketAddr>
+template <class Stream = TcpStream,
+          class Addr = SocketAddr,
+          class MsgCodec = LengthLimitedCodec<Stream, Addr>>
 class Channel {
 public:
     explicit Channel(Stream &&stream)
@@ -82,7 +99,7 @@ private:
     Stream                                stream_;
     BaseStream<Stream, Addr>::OwnedReader reader_{nullptr};
     BaseStream<Stream, Addr>::OwnedWriter writer_{nullptr};
-    LengthLimitedCodec<Stream, Addr>      codec_;
+    Codec<MsgCodec, Stream, Addr>         codec_;
 };
 
 } // namespace zedio::utils
