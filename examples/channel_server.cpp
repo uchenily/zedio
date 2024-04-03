@@ -1,77 +1,13 @@
 #include "zedio/core.hpp"
 #include "zedio/log.hpp"
 #include "zedio/net.hpp"
+#include "zedio/utils/codec.hpp"
 
 using namespace zedio::async;
 using namespace zedio::net;
 using namespace zedio::log;
+using namespace zedio::utils;
 using namespace zedio;
-
-template <class Stream = TcpStream, class Addr = SocketAddr>
-class Channel {
-public:
-    explicit Channel(Stream &&stream)
-        : stream_{std::move(stream)} {
-        std::tie(reader_, writer_) = stream_.into_split();
-    }
-
-public:
-    auto Send(std::span<const char> message) -> Task<void> {
-        char     msg_len[4];
-        uint32_t length = message.size();
-
-        msg_len[3] = length & 0xFF;
-        msg_len[2] = (length >> 8) & 0xFF;
-        msg_len[1] = (length >> 16) & 0xFF;
-        msg_len[0] = (length >> 24) & 0xFF;
-
-        auto ret = co_await writer_.write_all(msg_len);
-        if (!ret) {
-            console.error("send error: {}", ret.error().message());
-            co_await Close();
-            co_return;
-        }
-
-        ret = co_await writer_.write_all(message);
-        if (!ret) {
-            console.error("send error: {}", ret.error().message());
-            co_await Close();
-            co_return;
-        }
-        console.info("send succ");
-    }
-
-    auto Recv() -> Task<std::string> {
-        char msg_len[4];
-        auto ret = co_await reader_.read_exact(msg_len);
-        if (!ret) {
-            console.error("recv error: {}", ret.error().message());
-            co_await Close();
-            co_return std::string{};
-        }
-
-        auto length = msg_len[0] << 24 | msg_len[1] << 16 | msg_len[2] << 8 | msg_len[3];
-
-        std::string message(length, 0);
-        ret = co_await reader_.read_exact(message);
-        if (!ret) {
-            console.error("recv error: {}", ret.error().message());
-            co_await Close();
-            co_return std::string{};
-        }
-        console.info("recv succ");
-        co_return message;
-    }
-
-    auto Close() -> Task<void> {
-        co_await reader_.reunite(writer_).value().close();
-    }
-
-private:
-    Stream                                                       stream_;
-    zedio::socket::detail::BaseStream<Stream, Addr>::OwnedReader reader_{nullptr};
-    zedio::socket::detail::BaseStream<Stream, Addr>::OwnedWriter writer_{nullptr};
-};
 
 auto process(TcpStream stream) -> Task<void> {
     Channel channel{std::move(stream)};
