@@ -31,7 +31,8 @@ auto process(TcpStream stream) -> Task<void> {
 }
 
 auto server() -> Task<void> {
-    auto has_addr = SocketAddr::parse("192.168.15.33", 8888);
+    //auto has_addr = SocketAddr::parse("192.168.15.33", 8888);
+    auto has_addr = SocketAddr::parse("localhost", 8888);
     if (!has_addr) {
         console.error(has_addr.error().message());
         co_return;

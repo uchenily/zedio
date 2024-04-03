@@ -12,7 +12,7 @@ Hello, World!";
 // #[tokio::main(worker_threads = 4)]
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("192.168.15.33:7777").await.unwrap();
+    let listener = TcpListener::bind("localhost:7777").await.unwrap();
     loop {
         let (stream, _) = listener.accept().await.unwrap();
         tokio::spawn(async move {
