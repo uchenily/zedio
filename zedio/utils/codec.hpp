@@ -25,7 +25,8 @@ public:
 
 template <typename Stream, typename Addr>
 class LengthLimitedCodec : public Codec<LengthLimitedCodec<Stream, Addr>, Stream, Addr> {
-public:
+private:
+    friend Codec<LengthLimitedCodec<Stream, Addr>, Stream, Addr>;
     auto decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
         std::array<unsigned char, 4> msg_len{};
         auto                         ret = co_await reader.read_exact(
