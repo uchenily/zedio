@@ -1,33 +1,34 @@
 #include "zedio/core.hpp"
+#include "zedio/io/buf/stream.hpp"
 #include "zedio/log.hpp"
 #include "zedio/net.hpp"
 
 namespace zedio::utils {
 
 using namespace zedio::log;
+using namespace zedio::io;
 using namespace zedio::net;
 using namespace zedio::async;
-using namespace zedio::socket::detail;
 using namespace zedio;
 
-template <typename Derived, typename Stream, typename Addr>
+template <typename Derived, typename BufferedStream>
 class Codec {
 public:
-    auto Decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
+    auto Decode(BufferedStream &reader) -> Task<std::string> {
         co_return co_await static_cast<Derived *>(this)->decode(reader);
     }
 
-    auto Encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
-        -> Task<void> {
+    auto Encode(const std::span<const char> message, BufferedStream &writer) -> Task<void> {
         co_await static_cast<Derived *>(this)->encode(message, writer);
     }
 };
 
-template <typename Stream, typename Addr>
-class LengthLimitedCodec : public Codec<LengthLimitedCodec<Stream, Addr>, Stream, Addr> {
+template <typename BufferedStream>
+class LengthLimitedCodec : public Codec<LengthLimitedCodec<BufferedStream>, BufferedStream> {
 private:
-    friend Codec<LengthLimitedCodec<Stream, Addr>, Stream, Addr>;
-    auto decode(BaseStream<Stream, Addr>::OwnedReader &reader) -> Task<std::string> {
+    friend Codec<LengthLimitedCodec<BufferedStream>, BufferedStream>;
+
+    auto decode(BufferedStream &reader) -> Task<std::string> {
         std::array<unsigned char, 4> msg_len{};
         auto                         ret = co_await reader.read_exact(
             {reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
@@ -47,8 +48,7 @@ private:
         co_return message;
     }
 
-    auto encode(const std::span<const char> message, BaseStream<Stream, Addr>::OwnedWriter &writer)
-        -> Task<void> {
+    auto encode(const std::span<const char> message, BufferedStream &writer) -> Task<void> {
         std::array<unsigned char, 4> msg_len{};
         uint32_t                     length = message.size();
 
@@ -69,38 +69,33 @@ private:
             console.error("encode error: {}", ret.error().message());
             co_return;
         }
+
+        co_await writer.flush();
     }
 };
 
-template <class Stream = TcpStream,
-          class Addr = SocketAddr,
-          class MsgCodec = LengthLimitedCodec<Stream, Addr>>
 class Channel {
 public:
-    explicit Channel(Stream &&stream)
-        : stream_{std::move(stream)} {
-        std::tie(reader_, writer_) = stream_.into_split();
-    }
+    explicit Channel(TcpStream &&stream)
+        : buffered_stream_{std::move(stream)} {}
 
 public:
     auto Send(std::span<const char> message) -> Task<void> {
-        co_await codec_.Encode(message, writer_);
+        co_await codec_.Encode(message, buffered_stream_);
     }
 
     auto Recv() -> Task<std::string> {
-        auto message = co_await codec_.Decode(reader_);
+        auto message = co_await codec_.Decode(buffered_stream_);
         co_return message;
     }
 
     auto Close() -> Task<void> {
-        co_await reader_.reunite(writer_).value().close();
+        co_await buffered_stream_.into_inner().close();
     }
 
 private:
-    Stream                                stream_;
-    BaseStream<Stream, Addr>::OwnedReader reader_{nullptr};
-    BaseStream<Stream, Addr>::OwnedWriter writer_{nullptr};
-    Codec<MsgCodec, Stream, Addr>         codec_;
+    BufStream<TcpStream>                     buffered_stream_;
+    LengthLimitedCodec<BufStream<TcpStream>> codec_;
 };
 
 } // namespace zedio::utils
