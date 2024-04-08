@@ -48,6 +48,11 @@ public:
         if (fd < 0) [[unlikely]] {
             return std::unexpected{make_sys_error(errno)};
         }
+        auto optval = 1;
+        if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
+            [[unlikely]] {
+            return std::unexpected{make_sys_error(errno)};
+        }
         if (::bind(fd, addr.sockaddr(), addr.length()) == -1) [[unlikely]] {
             ::close(fd);
             return std::unexpected{make_sys_error(errno)};
