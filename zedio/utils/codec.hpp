@@ -90,15 +90,17 @@ public:
     }
 
 public:
+    [[REMEMBER_CO_AWAIT]]
     auto Send(std::span<const char> message) -> Task<void> {
         co_await codec_.Encode(message, buffered_writer_);
     }
 
+    [[REMEMBER_CO_AWAIT]]
     auto Recv() -> Task<std::string> {
-        auto message = co_await codec_.Decode(buffered_reader_);
-        co_return message;
+        co_return co_await codec_.Decode(buffered_reader_);
     }
 
+    [[REMEMBER_CO_AWAIT]]
     auto Close() -> Task<void> {
         co_await buffered_reader_.inner().reunite(buffered_writer_.inner()).value().close();
     }
