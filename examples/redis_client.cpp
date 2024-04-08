@@ -126,9 +126,9 @@ private:
     }
 };
 
-class Frame {
+class Protocol {
 public:
-    explicit Frame(TcpStream &&stream) {
+    explicit Protocol(TcpStream &&stream) {
         auto [reader, writer] = stream.into_split();
         buffered_reader_ = BufReader(std::move(reader));
         buffered_writer_ = BufWriter(std::move(writer));
@@ -158,6 +158,7 @@ public:
 
     [[REMEMBER_CO_AWAIT]]
     auto GetResult() -> Task<std::string> {
+        // 获取原始结果
         auto res = co_await codec_.Decode(buffered_reader_);
         console.debug("Recv:\n{}", res);
         co_return res;
@@ -177,7 +178,7 @@ private:
 class RedisClient {
 private:
     explicit RedisClient(TcpStream &&stream)
-        : frame_{std::move(stream)} {}
+        : proto_{std::move(stream)} {}
 
 public:
     static auto connect(std::string_view host, uint16_t port) -> Task<Result<RedisClient>> {
@@ -192,15 +193,15 @@ public:
     }
 
     auto set(std::string_view key, std::string_view value) -> Task<void> {
-        co_await frame_.SetCommand(key, value);
-        auto response = co_await frame_.GetResult();
+        co_await proto_.SetCommand(key, value);
+        auto response = co_await proto_.GetResult();
         if (response != "+OK\r\n") {
             console.error("SET command failed: {}", response);
         }
     }
     auto get(std::string_view key) -> Task<std::string> {
-        co_await frame_.GetCommand(key);
-        auto response = co_await frame_.GetResult();
+        co_await proto_.GetCommand(key);
+        auto response = co_await proto_.GetResult();
         if (response.size() < 2 || response.substr(0, 1) != "$") {
             console.error("Invalid response to GET command: {}", response);
             co_return std::string{};
@@ -215,7 +216,7 @@ public:
     }
 
 private:
-    Frame frame_;
+    Protocol proto_;
 };
 
 auto client() -> Task<void> {
