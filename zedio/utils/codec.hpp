@@ -14,17 +14,19 @@ using namespace zedio::net;
 using namespace zedio::async;
 using namespace zedio;
 
+using OwnedReader = socket::detail::OwnedReadHalf<TcpStream, SocketAddr>;
+using OwnedWriter = socket::detail::OwnedWriteHalf<TcpStream, SocketAddr>;
+using BufferedReader = BufReader<OwnedReader>;
+using BufferedWriter = BufWriter<OwnedWriter>;
+
 template <typename Derived>
 class Codec {
 public:
-    auto Decode(BufReader<socket::detail::OwnedReadHalf<TcpStream, SocketAddr>> &reader)
-        -> Task<std::string> {
+    auto Decode(BufferedReader &reader) -> Task<std::string> {
         co_return co_await static_cast<Derived *>(this)->decode(reader);
     }
 
-    auto Encode(const std::span<const char>                                       message,
-                BufWriter<socket::detail::OwnedWriteHalf<TcpStream, SocketAddr>> &writer)
-        -> Task<void> {
+    auto Encode(const std::span<const char> message, BufferedWriter &writer) -> Task<void> {
         co_await static_cast<Derived *>(this)->encode(message, writer);
     }
 };
@@ -33,8 +35,7 @@ class LengthLimitedCodec : public Codec<LengthLimitedCodec> {
 private:
     friend class Codec<LengthLimitedCodec>;
 
-    auto decode(BufReader<socket::detail::OwnedReadHalf<TcpStream, SocketAddr>> &reader)
-        -> Task<std::string> {
+    auto decode(BufferedReader &reader) -> Task<std::string> {
         std::array<unsigned char, 4> msg_len{};
         auto                         ret = co_await reader.read_exact(
             {reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
@@ -54,9 +55,7 @@ private:
         co_return message;
     }
 
-    auto encode(const std::span<const char>                                       message,
-                BufWriter<socket::detail::OwnedWriteHalf<TcpStream, SocketAddr>> &writer)
-        -> Task<void> {
+    auto encode(const std::span<const char> message, BufferedWriter &writer) -> Task<void> {
         std::array<unsigned char, 4> msg_len{};
         uint32_t                     length = message.size();
 
@@ -105,10 +104,8 @@ public:
     }
 
 private:
-    BufReader<socket::detail::OwnedReadHalf<TcpStream, SocketAddr>> buffered_reader_{
-        socket::detail::OwnedReadHalf<TcpStream, SocketAddr>{nullptr}};
-    BufWriter<socket::detail::OwnedWriteHalf<TcpStream, SocketAddr>> buffered_writer_{
-        socket::detail::OwnedWriteHalf<TcpStream, SocketAddr>{nullptr}};
+    BufferedReader     buffered_reader_{OwnedReader{nullptr}};
+    BufferedWriter     buffered_writer_{OwnedWriter{nullptr}};
     LengthLimitedCodec codec_;
 };
 
