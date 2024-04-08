@@ -7,6 +7,7 @@ namespace zedio::io {
 template <class IO>
     requires requires(IO io, std::span<char> buf) {
         { io.read(buf) };
+        { io.read_vectored(buf) };
     }
 class BufReader : public detail::ImplBufRead<BufReader<IO>> {
 private:
@@ -43,5 +44,4 @@ private:
     IO                   io_;
     detail::StreamBuffer r_stream_;
 };
-
 } // namespace zedio::io
