@@ -13,18 +13,11 @@ using namespace zedio::utils;
 auto process(TcpStream &&stream) -> Task<void> {
     Channel channel{std::move(stream)};
 
-    co_await channel.Send("client test message1");
-    auto message1 = co_await channel.Recv();
-    console.info("message1: {}", message1);
-
-    co_await channel.Send("client test message2");
-    auto message2 = co_await channel.Recv();
-    console.info("message2: {}", message2);
-
-    co_await channel.Send("client test message3");
-    auto message3 = co_await channel.Recv();
-    console.info("message3: {}", message3);
-
+    for (auto i = 0u; i < 64; i++) {
+        co_await channel.Send(std::format("client message round {}", i));
+        auto message = co_await channel.Recv();
+        console.info("Received: {}", message);
+    }
     co_await channel.Close();
 }
 

@@ -12,23 +12,18 @@ using namespace zedio;
 auto process(TcpStream stream) -> Task<void> {
     Channel channel{std::move(stream)};
 
-    auto message1 = co_await channel.Recv();
-    console.info("message1: {}", message1);
-    co_await channel.Send("server test message1");
-
-    auto message2 = co_await channel.Recv();
-    console.info("message2: {}", message2);
-    co_await channel.Send("server test message2");
-
-    auto message3 = co_await channel.Recv();
-    console.info("message3: {}", message3);
-    co_await channel.Send("server test message3");
-
+    for (auto i = 0u; i < 64; i++) {
+        co_await channel.Send(std::format("server message round {}", i));
+        auto message = co_await channel.Recv();
+        console.info("Received: {}", message);
+    }
     co_await channel.Close();
 }
 
 auto server() -> Task<void> {
-    auto has_addr = SocketAddr::parse("127.0.0.1", 9999);
+    std::string host = "127.0.0.1";
+    uint16_t    port = 9999;
+    auto        has_addr = SocketAddr::parse(host, port);
     if (!has_addr) {
         console.error(has_addr.error().message());
         co_return;
@@ -38,6 +33,7 @@ auto server() -> Task<void> {
         console.error(has_listener.error().message());
         co_return;
     }
+    console.info("Listening on {}:{} ...", host, port);
     auto listener = std::move(has_listener.value());
     while (true) {
         auto has_stream = co_await listener.accept();
