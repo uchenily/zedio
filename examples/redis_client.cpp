@@ -79,6 +79,7 @@ private:
 
     auto decode(BufferedReader &reader) -> Task<std::string> {
         char ch{};
+        // 读取1字节
         auto ret = co_await reader.read_exact({&ch, 1});
         if (!ret) {
             console.error("decode error: {}", ret.error().message());
@@ -100,7 +101,7 @@ private:
 
         if (type == MsgType::Simple) {
             std::string buf;
-
+            // read_until自动扩展buf
             co_await reader.read_until(buf, "\r\n");
             co_return std::string{ch + buf};
         } else {
@@ -188,8 +189,7 @@ public:
             console.error("{}", stream.error().message());
             co_return std::unexpected{make_sys_error(errno)};
         }
-        RedisClient client{std::move(stream.value())};
-        co_return client;
+        co_return RedisClient{std::move(stream.value())};
     }
 
     auto set(std::string_view key, std::string_view value) -> Task<void> {
