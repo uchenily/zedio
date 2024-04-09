@@ -25,6 +25,7 @@
 // examples:
 //   "hello" -> $5\r\nhello\r\n (11bytes)
 //   ""      -> $0\r\n\r\n      (6bytes)
+//   null    -> $-1\r\n         (5bytes) # RESP3 dedicated data type for null values
 // ----------------------------------------------
 // # Arrays
 //
@@ -108,10 +109,16 @@ private:
             assert(type == MsgType::Bulk);
             std::string buf_len;
             co_await reader.read_until(buf_len, "\r\n");
-            auto        len = std::stoul(buf_len);
+            auto len = std::stol(buf_len);
+
+            // Null bulk strings
+            if (len == -1) {
+                co_return std::string{ch + buf_len};
+            }
+
             std::string buf_msg;
             co_await reader.read_until(buf_msg, "\r\n");
-            assert(len == buf_msg.size() - 2);
+            assert(len == static_cast<int>(buf_msg.size()) - 2);
             co_return std::format("{}{}{}", ch, buf_len, buf_msg);
         }
     }
@@ -229,7 +236,10 @@ auto client() -> Task<void> {
     co_await client.set("hello", "world");
 
     auto result = co_await client.get("hello");
-    console.info("result: {}", result);
+    console.info("client.get(\"hello\"): {}", result);
+
+    result = co_await client.get("unknown");
+    console.info("client.get(\"unknown\"): {}", result);
 }
 
 auto main() -> int {
