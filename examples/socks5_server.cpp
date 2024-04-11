@@ -57,7 +57,7 @@ struct HandshakeRequest {
 struct HandshakeResponse {
     uint8_t chosen_method;
 
-    auto write_to(std::vector<uint8_t> &buf) {
+    auto write_to(std::vector<uint8_t> &buf) const {
         buf.push_back(SOCKS5_VERSION);
         buf.push_back(chosen_method);
     }
@@ -65,12 +65,12 @@ struct HandshakeResponse {
 
 class HandshakeCodec {
 public:
-    auto encode(HandshakeResponse &message) -> std::vector<uint8_t> {
+    auto encode(const HandshakeResponse &message) -> std::vector<uint8_t> {
         std::vector<uint8_t> buf;
         message.write_to(buf);
         return buf;
     }
-    auto decode(std::span<char> buf) -> HandshakeRequest {
+    auto decode([[maybe_unused]] std::span<char> buf) -> HandshakeRequest {
         return HandshakeRequest{};
     }
 };
@@ -99,7 +99,7 @@ struct CmdRequest {
     auto write_to(std::vector<uint8_t> buf) {
         buf.push_back(SOCKS5_VERSION);
         // buf.push_back(command.as_byte());
-        buf.push_back(command);
+        buf.push_back(static_cast<uint8_t>(command));
         buf.push_back(SOCKS5_RESERVED);
         // address.write_to(buf);
         // buf.put_u16(self.port);
@@ -127,9 +127,9 @@ struct CmdResponse {
     uint16_t port;
 
     auto write_to(std::vector<uint8_t> &buf) {
-        buf.push_back(static_cast<uint8_t>(SOCKS5_VERSION));
+        buf.push_back(SOCKS5_VERSION);
         // buf.push_back(reply.as_byte());
-        buf.push_back(reply);
+        buf.push_back(static_cast<uint8_t>(reply));
         buf.push_back(SOCKS5_RESERVED);
         // address.write_to(buf);
         // buf.put_u16(self.port);
@@ -143,7 +143,7 @@ public:
         message.write_to(buf);
         return buf;
     }
-    auto decode(std::span<char> buf) -> CmdRequest {
+    auto decode([[maybe_unused]] std::span<char> buf) -> CmdRequest {
         return CmdRequest{};
     }
 };
@@ -151,12 +151,25 @@ public:
 template <typename Codec>
 class Framed {
 public:
-    Framed(TcpStream &stream)
-        : stream_{stream} {}
+    Framed(TcpStream &&stream)
+        : stream_{std::move(stream)} {}
+
+    // Framed(Framed &&other) {
+    //     codec_ = std::move(other.codec_);
+    //     stream_ = std::move(other.stream_);
+    // }
+    // auto operator=(Framed &&other) -> Framed & {
+    //     codec_ = std::move(other.codec_);
+    //     stream_ = std::move(other.stream_);
+    //     return *this;
+    // }
+
+    //~Framed() = default;
 
 public:
     // 作用是读取一个完整的数据帧 (怎么表示? string? vector? buf? Result<>?)
-    auto read_frame(std::vector<char> &buf) -> Task<Result<std::string>> {
+    template <typename FrameType>
+    auto read_frame(std::vector<char> &buf) -> Task<Result<FrameType>> {
         // 读取数据
         co_await stream_.read(buf);
         // 编码数据
@@ -164,28 +177,31 @@ public:
         co_return res;
     }
 
-    template <typename MessageType>
-        requires requires(MessageType msg, std::vector<uint8_t> &buf) { msg.write_to(buf); }
-    auto write_frame(const MessageType &message) -> Task<void> {
+    template <typename FrameType>
+        requires requires(FrameType msg, std::vector<uint8_t> &buf) { msg.write_to(buf); }
+    auto write_frame(const FrameType &message) -> Task<void> {
         // 编码数据
-        auto encoded = codec_.encode(message);
+        [[maybe_unused]] auto encoded = codec_.encode(message);
         // 写入数据
-        stream_.write(encoded);
+
+        // TODO: 添加一个模板方法: 一个类实现了 write_to(buf) 成员方法就可以调用
+        // stream_.write(encoded);
+        co_return;
     }
 
 private:
-    Codec      codec_{};
-    TcpStream &stream_;
+    Codec     codec_{};
+    TcpStream stream_;
 };
 
 using HandshakeFramed = Framed<HandshakeCodec>;
 using CmdFramed = Framed<CmdCodec>;
 
 auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
-    HandshakeFramed   handshake_framed{stream};
+    HandshakeFramed   handshake_framed{std::move(stream)};
     std::vector<char> buf{};
 
-    auto req = co_await handshake_framed.read_frame(buf);
+    auto req = co_await handshake_framed.read_frame<HandshakeRequest>(buf);
     if (!req) {
         console.error("read handshake failed");
     }
@@ -193,14 +209,14 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     HandshakeResponse resp{SOCKS5_AUTH_METHOD_NONE};
     co_await handshake_framed.write_frame(resp);
 
-    if (!req.methods.contains(&SOCKS5_AUTH_METHOD_NONE)) {
-        co_return std::unexpected{make_zedio_error(Error::Unknown)};
-    }
+    // if (!req.methods.contains(&SOCKS5_AUTH_METHOD_NONE)) {
+    //     co_return std::unexpected{make_zedio_error(Error::Unknown)};
+    // }
 
     // CmdFramed cmd_framed{stream};
     // auto      cmd_req = co_await cmd_framed.read_frame(buf);
     // co_return cmd_framed;
-    co_return CmdFramed{stream};
+    co_return CmdFramed{std::move(stream)};
 }
 
 auto socks5_proxy(TcpStream stream) -> Task<void> {
