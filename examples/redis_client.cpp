@@ -234,6 +234,7 @@ auto client() -> Task<void> {
     auto res = co_await RedisClient::connect("127.0.0.1", 6379);
     if (!res) {
         console.error("{}", res.error().message());
+        co_return;
     }
     auto client = std::move(res.value());
 
