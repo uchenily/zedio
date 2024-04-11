@@ -96,7 +96,7 @@ struct CmdRequest {
     /// Remot port
     uint16_t port;
 
-    auto write_to(std::vector<uint8_t> buf) {
+    auto write_to(std::vector<uint8_t> buf) const {
         buf.push_back(SOCKS5_VERSION);
         // buf.push_back(command.as_byte());
         buf.push_back(static_cast<uint8_t>(command));
@@ -126,7 +126,7 @@ struct CmdResponse {
     Address  address;
     uint16_t port;
 
-    auto write_to(std::vector<uint8_t> &buf) {
+    auto write_to(std::vector<uint8_t> &buf) const {
         buf.push_back(SOCKS5_VERSION);
         // buf.push_back(reply.as_byte());
         buf.push_back(static_cast<uint8_t>(reply));
@@ -151,7 +151,7 @@ public:
 template <typename Codec>
 class Framed {
 public:
-    Framed(TcpStream &&stream)
+    explicit Framed(TcpStream &&stream)
         : stream_{std::move(stream)} {}
 
     // Framed(Framed &&other) {
@@ -230,7 +230,7 @@ auto socks5_proxy(TcpStream stream) -> Task<void> {
 }
 
 auto server() -> Task<void> {
-    auto addr = SocketAddr::parse("127.0.0.1", 9898);
+    auto addr = SocketAddr::parse("0.0.0.0", 1080);
     if (!addr) {
         console.error(addr.error().message());
         co_return;
@@ -241,6 +241,8 @@ auto server() -> Task<void> {
         console.error(has_listener.error().message());
         co_return;
     }
+
+    console.info("Listening on 0.0.0.0:1080 ...");
     auto listener = std::move(has_listener.value());
     while (true) {
         // auto has_stream = co_await listener.accept().set_timeout(3s).set_exclusion();
