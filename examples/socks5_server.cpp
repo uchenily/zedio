@@ -51,6 +51,12 @@ public:
     auto decode() {}
 };
 
+class CmdCodec {
+public:
+    auto encode() {}
+    auto decode() {}
+};
+
 template <typename Codec>
 class Framed {
 public:
@@ -77,9 +83,9 @@ private:
 };
 
 auto socks5_handshake(TcpStream stream) -> Task<Result<CmdFramed>> {
-    Framed<HandshakeCodec> framed{stream};
+    Framed<HandshakeCodec> handshake_framed{stream};
 
-    auto req = co_await framed.read_frame();
+    auto req = co_await handshake_framed.read_frame();
     if (!req) {
         console.error("read handshake failed");
     }
@@ -91,7 +97,8 @@ auto socks5_handshake(TcpStream stream) -> Task<Result<CmdFramed>> {
         co_return make_zedio_error{};
     }
 
-    // framed.map_codec
+    Framed<CmdCodec> cmd_framed{stream};
+    co_return co_await cmd_framed.read_frame();
 }
 
 auto socks5_proxy(TcpStream stream) -> Task<void> {
@@ -128,7 +135,7 @@ auto server() -> Task<void> {
     }
 }
 
-auto main(int argc, char **argv) -> int {
+auto main() -> int {
     SET_LOG_LEVEL(zedio::log::LogLevel::Debug);
     auto runtime = Runtime::options().scheduler().set_num_workers(4).build();
     runtime.block_on(server());
