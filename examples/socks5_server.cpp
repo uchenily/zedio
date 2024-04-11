@@ -5,6 +5,8 @@
 // C
 #include <cstdint>
 // C++
+#include <span>
+#include <string>
 #include <vector>
 
 using namespace zedio::async;
@@ -42,35 +44,37 @@ static constexpr uint8_t SOCKS5_REPLY_TTL_EXPIRED = 0x06;
 static constexpr uint8_t SOCKS5_REPLY_COMMAND_NOT_SUPPORTED = 0x07;
 static constexpr uint8_t SOCKS5_REPLY_ADDRESS_TYPE_NOT_SUPPORTED = 0x08;
 
-using BytesFramed = Framed<TcpStream, BytesCodec>;
-using CmdFramed = Framed<TcpStream, CmdCodec>;
-
 class HandshakeCodec {
 public:
-    auto encode() {}
-    auto decode() {}
+    auto encode(std::span<char> buf) {}
+    auto decode(std::span<char> buf) -> std::string {
+        return std::string("handshake");
+    }
 };
 
 class CmdCodec {
 public:
-    auto encode() {}
-    auto decode() {}
+    auto encode(std::span<char> buf) {}
+    auto decode(std::span<char> buf) -> std::string {
+        return std::string("cmd");
+    }
 };
 
 template <typename Codec>
 class Framed {
 public:
-    Framed(TcpStream stream)
+    Framed(TcpStream &stream)
         : stream_{stream} {}
 
 public:
-    auto read_frame(std::vector<uint8_t> &buf) {
+    auto read_frame(std::vector<char> &buf) -> Task<std::string> {
         // 读取数据
         co_await stream_.read(buf);
         // 编码数据
-        codec_.decode(buf);
+        aut res = codec_.decode(buf);
+        co_return res;
     }
-    auto write_frame(const std::vector<uint8_t> &buf) {
+    auto write_frame(const std::vector<char> &buf) -> Task<void> {
         // 编码数据
         auto encoded = codec_.encode(buf);
         // 写入数据
@@ -78,14 +82,17 @@ public:
     }
 
 private:
-    Codec     &codec_;
+    Codec      codec_{};
     TcpStream &stream_;
 };
 
-auto socks5_handshake(TcpStream stream) -> Task<Result<CmdFramed>> {
-    Framed<HandshakeCodec> handshake_framed{stream};
+using CmdFramed = Framed<CmdCodec>;
 
-    auto req = co_await handshake_framed.read_frame();
+auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
+    Framed<HandshakeCodec> handshake_framed{stream};
+    std::vector<char>   buf{};
+
+    auto req = co_await handshake_framed.read_frame(buf);
     if (!req) {
         console.error("read handshake failed");
     }
@@ -94,15 +101,19 @@ auto socks5_handshake(TcpStream stream) -> Task<Result<CmdFramed>> {
     co_await stream.write(resp);
 
     if (!req.methods.contains(&SOCKS5_AUTH_METHOD_NONE)) {
-        co_return make_zedio_error{};
+        co_return std::unexpected{make_zedio_error(Error::Unknown)};
     }
 
     Framed<CmdCodec> cmd_framed{stream};
-    co_return co_await cmd_framed.read_frame();
+    co_return co_await cmd_framed.read_frame(buf);
 }
 
 auto socks5_proxy(TcpStream stream) -> Task<void> {
     auto handshaked = co_await socks5_handshake(stream);
+    if (handshaked) {
+        // console.debug("handshake: {}", handshaked.value());
+        console.debug("handshaked");
+    }
     // auto [stream1, stream2] = co_await socks5_command(handshaked);
     // co_await socks5_streaming(s1, s2);
 }

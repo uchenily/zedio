@@ -23,6 +23,7 @@ public:
         PassedTime,
         InvalidSocketType,
         ReuniteFailed,
+        Unknown,
     };
 
 public:
