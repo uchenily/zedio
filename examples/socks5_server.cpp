@@ -2,6 +2,11 @@
 #include "zedio/log.hpp"
 #include "zedio/net.hpp"
 
+// C
+#include <cstdint>
+// C++
+#include <vector>
+
 using namespace zedio::async;
 using namespace zedio::net;
 using namespace zedio::log;
@@ -46,9 +51,35 @@ public:
     auto decode() {}
 };
 
+template <typename Codec>
+class Framed {
+public:
+    Framed(TcpStream stream)
+        : stream_{stream} {}
+
+public:
+    auto read_frame(std::vector<uint8_t> &buf) {
+        // 读取数据
+        co_await stream_.read(buf);
+        // 编码数据
+        codec_.decode(buf);
+    }
+    auto write_frame(const std::vector<uint8_t> &buf) {
+        // 编码数据
+        auto encoded = codec_.encode(buf);
+        // 写入数据
+        stream_.write(encoded);
+    }
+
+private:
+    Codec     &codec_;
+    TcpStream &stream_;
+};
+
 auto socks5_handshake(TcpStream stream) -> Task<Result<CmdFramed>> {
-    Framed framed = {stream, HandshakeCodec};
-    auto   req = co_await framed.next();
+    Framed<HandshakeCodec> framed{stream};
+
+    auto req = co_await framed.read_frame();
     if (!req) {
         console.error("read handshake failed");
     }
