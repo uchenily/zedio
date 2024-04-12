@@ -7,6 +7,7 @@
 // C++
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace zedio::async;
@@ -212,6 +213,11 @@ public:
         co_return;
     }
 
+    // auto take_stream() -> TcpStream && {
+    auto take_stream() -> TcpStream {
+        return std::move(stream_);
+    }
+
 private:
     Codec     codec_{};
     TcpStream stream_;
@@ -244,28 +250,49 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     co_return CmdFramed{std::move(stream)};
 }
 
+auto socks5_connect(CmdFramed &cmd_framed, CmdRequest &req)
+    -> Task<Result<std::pair<TcpStream, TcpStream>>> {
+    // TODO
+    std::string addr = "110.242.68.66";
+    auto        sockaddr = SocketAddr{Ipv4Addr::parse(addr).value(), req.port};
+    console.debug("try connect to {} ...", addr);
+    auto outside = co_await TcpStream::connect(sockaddr);
+    if (!outside) {
+        console.error("connect {}:{} failed", addr, req.port);
+        co_return std::unexpected{make_zedio_error(Error::Unknown)};
+    }
+
+    co_return std::pair<TcpStream, TcpStream>(std::move(cmd_framed.take_stream()),
+                                              std::move(outside.value()));
+}
+
 auto socks5_command(CmdFramed &cmd_framed) -> Task<Result<std::pair<BytesFramed, BytesFramed>>> {
     std::vector<char> buf{};
-    auto              req = co_await cmd_framed.read_frame<CmdRequest>();
+    auto              req = co_await cmd_framed.read_frame<CmdRequest>(buf);
     if (!req) {
         console.error("read command failed");
     }
 
-    auto      command_req = req.value();
-    TcpStream stream{};
-    TcpStream outside{};
+    auto command_req = req.value();
+    using Cmd = CmdRequest::Command;
     switch (command_req.command) {
-    case SOCKS5_CMD_TCP_CONNECT:
-        std::tie(stream, outside) = co_await socks_connect(cmd_framed, req);
-        break;
-    default:
-        console.error("unsupported command: {}", command_req.command);
+    case Cmd::TCPConnect: {
+        auto [stream, outside] = (co_await socks5_connect(cmd_framed, command_req)).value();
+        // auto local = BytesFramed{std::move(stream)};
+        BytesFramed local{std::move(stream)};
+        // auto remote = BytesFramed{std::move(outside)};
+        BytesFramed remote{std::move(outside)};
+
+        // co_return std::make_pair(local, remote);
+        co_return std::pair<BytesFramed, BytesFramed>(std::move(local), std::move(remote));
     }
-
-    auto local = BytesFramed{std::move(stream)};
-    auto remote = BytesFramed{std::move(outside)};
-
-    return std::make_pair(local, remote);
+    case Cmd::TCPBind:
+    case Cmd::UDPAssociate:
+    case Cmd::OtherCommand:
+    default:
+        console.error("unsupported command: {}", static_cast<uint8_t>(command_req.command));
+        co_return std::unexpected{make_zedio_error(Error::Unknown)};
+    }
 }
 
 auto socks5_proxy(TcpStream stream) -> Task<void> {
@@ -274,8 +301,10 @@ auto socks5_proxy(TcpStream stream) -> Task<void> {
         // console.debug("handshake: {}", handshaked.value());
         console.debug("handshaked");
     }
-    auto [stream1, stream2] = co_await socks5_command(handshaked);
-    // co_await socks5_streaming(s1, s2);
+
+    // CmdFramed cmd_framed{handshaked.value()};
+    //[[maybe_unused]] auto [stream1, stream2] = (co_await socks5_command(cmd_framed)).value();
+    //  co_await socks5_streaming(s1, s2);
 }
 
 auto server() -> Task<void> {
