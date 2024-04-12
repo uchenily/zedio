@@ -136,6 +136,16 @@ struct CmdResponse {
     }
 };
 
+// TODO
+struct BytesRequest {
+    auto write_to([[maybe_unused]] std::vector<char> &buf) {}
+};
+
+// TODO
+struct BytesResponse {
+    auto write_to([[maybe_unused]] std::vector<char> &buf) const {}
+};
+
 class CmdCodec {
 public:
     auto encode(CmdResponse &message) {
@@ -145,6 +155,18 @@ public:
     }
     auto decode([[maybe_unused]] std::span<char> buf) -> CmdRequest {
         return CmdRequest{};
+    }
+};
+
+class BytesCodec {
+public:
+    auto encode(BytesResponse &message) {
+        std::vector<char> buf;
+        message.write_to(buf);
+        return buf;
+    }
+    auto decode([[maybe_unused]] std::span<char> buf) -> BytesRequest {
+        return BytesRequest{};
     }
 };
 
@@ -197,6 +219,7 @@ private:
 
 using HandshakeFramed = Framed<HandshakeCodec>;
 using CmdFramed = Framed<CmdCodec>;
+using BytesFramed = Framed<BytesCodec>;
 
 auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     HandshakeFramed   handshake_framed{std::move(stream)};
@@ -206,7 +229,7 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     if (!req) {
         console.error("read handshake failed");
     }
-    //console.debug("req: {}", req.value().methods[0]);
+    // console.debug("req: {}", req.value().methods[0]);
 
     HandshakeResponse resp{SOCKS5_AUTH_METHOD_NONE};
     co_await handshake_framed.write_frame(resp);
@@ -221,13 +244,37 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     co_return CmdFramed{std::move(stream)};
 }
 
+auto socks5_command(CmdFramed &cmd_framed) -> Task<Result<std::pair<BytesFramed, BytesFramed>>> {
+    std::vector<char> buf{};
+    auto              req = co_await cmd_framed.read_frame<CmdRequest>();
+    if (!req) {
+        console.error("read command failed");
+    }
+
+    auto      command_req = req.value();
+    TcpStream stream{};
+    TcpStream outside{};
+    switch (command_req.command) {
+    case SOCKS5_CMD_TCP_CONNECT:
+        std::tie(stream, outside) = co_await socks_connect(cmd_framed, req);
+        break;
+    default:
+        console.error("unsupported command: {}", command_req.command);
+    }
+
+    auto local = BytesFramed{std::move(stream)};
+    auto remote = BytesFramed{std::move(outside)};
+
+    return std::make_pair(local, remote);
+}
+
 auto socks5_proxy(TcpStream stream) -> Task<void> {
     auto handshaked = co_await socks5_handshake(stream);
     if (handshaked) {
         // console.debug("handshake: {}", handshaked.value());
         console.debug("handshaked");
     }
-    // auto [stream1, stream2] = co_await socks5_command(handshaked);
+    auto [stream1, stream2] = co_await socks5_command(handshaked);
     // co_await socks5_streaming(s1, s2);
 }
 
