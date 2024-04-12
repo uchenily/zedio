@@ -45,11 +45,11 @@ static constexpr uint8_t SOCKS5_REPLY_COMMAND_NOT_SUPPORTED = 0x07;
 static constexpr uint8_t SOCKS5_REPLY_ADDRESS_TYPE_NOT_SUPPORTED = 0x08;
 
 struct HandshakeRequest {
-    std::vector<uint8_t> methods;
+    std::vector<char> methods;
 
-    auto write_to(std::vector<uint8_t> &buf) {
+    auto write_to(std::vector<char> &buf) {
         buf.push_back(SOCKS5_VERSION);
-        buf.push_back(methods.size());
+        buf.push_back(static_cast<char>(methods.size()));
         buf.insert(buf.end(), methods.begin(), methods.end());
     }
 };
@@ -57,16 +57,16 @@ struct HandshakeRequest {
 struct HandshakeResponse {
     uint8_t chosen_method;
 
-    auto write_to(std::vector<uint8_t> &buf) const {
+    auto write_to(std::vector<char> &buf) const {
         buf.push_back(SOCKS5_VERSION);
-        buf.push_back(chosen_method);
+        buf.push_back(static_cast<char>(chosen_method));
     }
 };
 
 class HandshakeCodec {
 public:
-    auto encode(const HandshakeResponse &message) -> std::vector<uint8_t> {
-        std::vector<uint8_t> buf;
+    auto encode(const HandshakeResponse &message) -> std::vector<char> {
+        std::vector<char> buf;
         message.write_to(buf);
         return buf;
     }
@@ -96,10 +96,10 @@ struct CmdRequest {
     /// Remot port
     uint16_t port;
 
-    auto write_to(std::vector<uint8_t> buf) const {
+    auto write_to(std::vector<char> buf) const {
         buf.push_back(SOCKS5_VERSION);
         // buf.push_back(command.as_byte());
-        buf.push_back(static_cast<uint8_t>(command));
+        buf.push_back(static_cast<char>(command));
         buf.push_back(SOCKS5_RESERVED);
         // address.write_to(buf);
         // buf.put_u16(self.port);
@@ -126,10 +126,10 @@ struct CmdResponse {
     Address  address;
     uint16_t port;
 
-    auto write_to(std::vector<uint8_t> &buf) const {
+    auto write_to(std::vector<char> &buf) const {
         buf.push_back(SOCKS5_VERSION);
         // buf.push_back(reply.as_byte());
-        buf.push_back(static_cast<uint8_t>(reply));
+        buf.push_back(static_cast<char>(reply));
         buf.push_back(SOCKS5_RESERVED);
         // address.write_to(buf);
         // buf.put_u16(self.port);
@@ -139,7 +139,7 @@ struct CmdResponse {
 class CmdCodec {
 public:
     auto encode(CmdResponse &message) {
-        std::vector<uint8_t> buf;
+        std::vector<char> buf;
         message.write_to(buf);
         return buf;
     }
@@ -178,7 +178,7 @@ public:
     }
 
     template <typename FrameType>
-        requires requires(FrameType msg, std::vector<uint8_t> &buf) { msg.write_to(buf); }
+        requires requires(FrameType msg, std::vector<char> &buf) { msg.write_to(buf); }
     auto write_frame(const FrameType &message) -> Task<void> {
         // 编码数据
         [[maybe_unused]] auto encoded = codec_.encode(message);
@@ -186,6 +186,7 @@ public:
 
         // TODO: 添加一个模板方法: 一个类实现了 write_to(buf) 成员方法就可以调用
         // stream_.write(encoded);
+        co_await stream_.write(encoded);
         co_return;
     }
 
@@ -205,6 +206,7 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     if (!req) {
         console.error("read handshake failed");
     }
+    //console.debug("req: {}", req.value().methods[0]);
 
     HandshakeResponse resp{SOCKS5_AUTH_METHOD_NONE};
     co_await handshake_framed.write_frame(resp);
@@ -259,6 +261,7 @@ auto server() -> Task<void> {
     }
 }
 
+// 现在看来实现代理服务器步骤还是挺多的, 不要一步跨太大了, 先从简单的开始做起吧
 auto main() -> int {
     SET_LOG_LEVEL(zedio::log::LogLevel::Debug);
     auto runtime = Runtime::options().scheduler().set_num_workers(4).build();
