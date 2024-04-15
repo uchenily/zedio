@@ -24,7 +24,8 @@ while True:
             if not data:
                 break
             print(f'Received data: `{data.decode()}`')
-            connection.send(b"\x00\x00\x00\x0chello world!")
+            # connection.send(b"\x00\x00\x00\x0chello world!")
+            connection.send(b"\x00\x00\x00\x0bzhangsan 18")
 
     finally:
         # 关闭连接

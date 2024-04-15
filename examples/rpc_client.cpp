@@ -125,6 +125,7 @@ public:
     }
 
     template <typename T>
+        requires requires(std::string_view buf) { T::deserialize(buf); }
     auto call([[maybe_unused]] std::string_view method_name) -> Task<Result<T>> {
         RpcFramed         rpc_framed{std::move(stream_)};
         std::vector<char> buf(64);
@@ -139,7 +140,9 @@ public:
         }
 
         console.info("data from rpc server: {}", resp.value().payload);
-        co_return T{"zhangsan", 18};
+        auto data = resp.value().payload;
+        co_return T::deserialize(data);
+        // co_return T{"zhangsan", 18};
     }
 
 private:
@@ -153,7 +156,8 @@ auto client() -> Task<void> {
         co_return;
     }
     auto client = std::move(res.value());
-    co_await client.call<Person>("get_person");
+    auto person = (co_await client.call<Person>("get_person")).value();
+    console.info("get_person name={}, age={}", person.name, person.age);
 }
 
 auto main() -> int {

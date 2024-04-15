@@ -24,8 +24,8 @@ public:
     }
 
     // 反序列化函数
-    static auto deserialize(const std::string &data) -> Person {
-        std::istringstream iss(data);
+    static auto deserialize(std::string_view data) -> Person {
+        std::istringstream iss(data.data());
         std::string        name;
         int                age{};
         iss >> name >> age;
