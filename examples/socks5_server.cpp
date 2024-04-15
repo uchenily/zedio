@@ -302,8 +302,8 @@ auto socks5_proxy(TcpStream stream) -> Task<void> {
         console.debug("handshaked");
     }
 
-    // CmdFramed cmd_framed{handshaked.value()};
-    //[[maybe_unused]] auto [stream1, stream2] = (co_await socks5_command(cmd_framed)).value();
+    CmdFramed cmd_framed{std::move(handshaked.value())};
+    [[maybe_unused]] auto [stream1, stream2] = (co_await socks5_command(cmd_framed)).value();
     //  co_await socks5_streaming(s1, s2);
 }
 
