@@ -149,6 +149,8 @@ struct BytesResponse {
 
     auto write_to([[maybe_unused]] std::vector<char> &buf) const {
         // buf.insert(buf.end(), inner.begin(), inner.end());
+        std::string_view sv{"BytesResponse::write_to::buf"};
+        buf.insert(buf.end(), sv.begin(), sv.end());
     }
 };
 
@@ -160,7 +162,9 @@ public:
         return buf;
     }
     auto decode([[maybe_unused]] std::span<char> buf) -> CmdRequest {
-        return CmdRequest{};
+        return CmdRequest{.command = CmdRequest::Command::TCPConnect,
+                          .address = Address::DomainName,
+                          .port = 80};
     }
 };
 
@@ -232,7 +236,7 @@ using HandshakeFramed = Framed<HandshakeCodec>;
 using CmdFramed = Framed<CmdCodec>;
 using BytesFramed = Framed<BytesCodec>;
 
-auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
+auto socks5_handshake(TcpStream &&stream) -> Task<Result<CmdFramed>> {
     HandshakeFramed   handshake_framed{std::move(stream)};
     std::vector<char> buf{};
 
@@ -252,13 +256,14 @@ auto socks5_handshake(TcpStream &stream) -> Task<Result<CmdFramed>> {
     // CmdFramed cmd_framed{stream};
     // auto      cmd_req = co_await cmd_framed.read_frame(buf);
     // co_return cmd_framed;
-    co_return CmdFramed{std::move(stream)};
+    // co_return CmdFramed{std::move(stream)};
+    co_return CmdFramed{std::move(handshake_framed.take_stream())};
 }
 
 auto socks5_connect(CmdFramed &cmd_framed, CmdRequest &req)
     -> Task<Result<std::pair<TcpStream, TcpStream>>> {
     // TODO
-    std::string addr = "39.156.66.10";
+    std::string addr = "127.0.0.1";
     auto        sockaddr = SocketAddr{Ipv4Addr::parse(addr).value(), req.port};
     console.debug("try connect to {} ...", addr);
     auto outside = co_await TcpStream::connect(sockaddr);
@@ -278,6 +283,7 @@ auto socks5_command(CmdFramed &cmd_framed) -> Task<Result<std::pair<BytesFramed,
     if (!req) {
         console.error("read command failed");
     }
+    console.info("read command successful");
 
     auto command_req = req.value();
     using Cmd = CmdRequest::Command;
@@ -305,14 +311,18 @@ auto socks5_streaming(BytesFramed &local, BytesFramed &remote) -> Task<void> {
     // TODO:
     // local --> remote
     // remote --> local
-    std::vector<char> buf{};
+
+    console.info("socks5 streaming ...");
+    std::vector<char> buf(1024);
 
     auto frame = co_await local.read_frame<BytesRequest>(buf);
     // BytesResponse resp{buf};
+    console.info("read frame from local: {}", std::string_view{buf.data(), buf.size()});
     BytesResponse resp;
     co_await remote.write_frame(resp);
 
     frame = co_await remote.read_frame<BytesRequest>(buf);
+    console.info("read frame from remote: {}", std::string_view{buf.data(), buf.size()});
     // BytesResponse resp2{buf};
     BytesResponse resp2;
     co_await local.write_frame(resp2);
@@ -320,14 +330,14 @@ auto socks5_streaming(BytesFramed &local, BytesFramed &remote) -> Task<void> {
 }
 
 auto socks5_proxy(TcpStream stream) -> Task<void> {
-    auto handshaked = co_await socks5_handshake(stream);
+    auto handshaked = co_await socks5_handshake(std::move(stream));
     if (handshaked) {
         // console.debug("handshake: {}", handshaked.value());
         console.debug("handshaked");
     }
 
     CmdFramed cmd_framed{std::move(handshaked.value())};
-    [[maybe_unused]] auto [stream1, stream2] = (co_await socks5_command(cmd_framed)).value();
+    auto [stream1, stream2] = (co_await socks5_command(cmd_framed)).value();
     co_await socks5_streaming(stream1, stream2);
 }
 
