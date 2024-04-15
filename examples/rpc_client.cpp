@@ -24,33 +24,45 @@ using namespace zedio::async;
 using namespace zedio;
 
 struct RpcRequest {
-    std::vector<char> methods;
+    std::string_view method;
 
-    auto write_to(std::vector<char> &buf) {
-        buf.push_back('a');
-        buf.push_back(static_cast<char>(methods.size()));
-        buf.insert(buf.end(), methods.begin(), methods.end());
+    auto write_to(std::string &buf) const {
+        std::array<unsigned char, 4> msg_len{};
+        uint32_t                     length = method.size();
+
+        msg_len[3] = length & 0xFF;
+        msg_len[2] = (length >> 8) & 0xFF;
+        msg_len[1] = (length >> 16) & 0xFF;
+        msg_len[0] = (length >> 24) & 0xFF;
+        buf.append(std::string_view{reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
+        buf.append(method);
     }
 };
 
 struct RpcResponse {
-    uint8_t chosen_method;
-
-    auto write_to(std::vector<char> &buf) const {
-        buf.push_back('a');
-        buf.push_back(static_cast<char>(chosen_method));
-    }
+    std::string_view payload;
 };
 
 class RpcCodec {
 public:
-    auto encode(const RpcResponse &message) -> std::vector<char> {
-        std::vector<char> buf;
+    auto encode(const RpcRequest &message) -> std::string {
+        std::string buf;
         message.write_to(buf);
         return buf;
     }
-    auto decode([[maybe_unused]] std::span<char> buf) -> RpcRequest {
-        return RpcRequest{};
+    auto decode([[maybe_unused]] std::span<char> buf) -> Result<RpcResponse> {
+        if (buf.size() < 4uz) {
+            return std::unexpected{make_zedio_error(Error::Unknown)};
+        }
+        auto length = buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3];
+
+        if (buf.size() < 4uz + length) {
+            return std::unexpected{make_zedio_error(Error::Unknown)};
+        }
+
+        return RpcResponse{
+            std::string_view{buf.begin() + 4uz, buf.begin() + 4uz + length}
+        };
     }
 };
 
@@ -66,17 +78,17 @@ public:
     auto read_frame(std::vector<char> &buf) -> Task<Result<FrameType>> {
         // 读取数据
         co_await stream_.read(buf);
-        // 编码数据
+        // 解码数据
         auto res = codec_.decode(buf);
         co_return res;
     }
 
     // 写入一个完整的数据帧
     template <typename FrameType>
-        requires requires(FrameType msg, std::vector<char> &buf) { msg.write_to(buf); }
+        requires requires(FrameType msg, std::string &buf) { msg.write_to(buf); }
     auto write_frame(FrameType &message) -> Task<void> {
         // 编码数据
-        [[maybe_unused]] auto encoded = codec_.encode(message);
+        auto encoded = codec_.encode(message);
         // 写入数据
 
         // TODO: 添加一个模板方法: 一个类实现了 write_to(buf) 成员方法就可以调用
@@ -114,6 +126,19 @@ public:
 
     template <typename T>
     auto call([[maybe_unused]] std::string_view method_name) -> Task<Result<T>> {
+        RpcFramed         rpc_framed{std::move(stream_)};
+        std::vector<char> buf(64);
+
+        RpcRequest req{.method = method_name};
+        co_await rpc_framed.write_frame<RpcRequest>(req);
+
+        auto resp = co_await rpc_framed.read_frame<RpcResponse>(buf);
+        if (!resp) {
+            console.error("receive rpc response failed");
+            co_return std::unexpected{make_zedio_error(Error::Unknown)};
+        }
+
+        console.info("data from rpc server: {}", resp.value().payload);
         co_return T{"zhangsan", 18};
     }
 
