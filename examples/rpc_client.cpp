@@ -25,13 +25,18 @@ using namespace zedio;
 
 class RpcClient {
 private:
-    RpcClient(std::string_view host, uint16_t port)
-        : host_{host}
-        , port_{port} {}
+    explicit RpcClient(TcpStream &&stream)
+        : stream_{std::move(stream)} {}
 
 public:
     static auto connect(std::string_view host, uint16_t port) -> Task<Result<RpcClient>> {
-        co_return RpcClient{host, port};
+        auto addr = SocketAddr::parse(host, port).value();
+        auto stream = co_await TcpStream::connect(addr);
+        if (!stream) {
+            console.error("TcpStream::connect failed: {}", stream.error().message());
+            co_return std::unexpected{make_sys_error(errno)};
+        }
+        co_return RpcClient{std::move(stream.value())};
     }
 
     template <typename T>
@@ -40,9 +45,7 @@ public:
     }
 
 private:
-private:
-    std::string host_;
-    uint16_t    port_;
+    TcpStream stream_;
 };
 
 auto client() -> Task<void> {
@@ -51,7 +54,7 @@ auto client() -> Task<void> {
         console.error("connect failed");
         co_return;
     }
-    auto client = res.value();
+    auto client = std::move(res.value());
     co_await client.call<Person>("get_person");
 }
 
