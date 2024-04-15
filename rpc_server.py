@@ -25,7 +25,7 @@ while True:
                 break
             print(f'Received data: `{data.decode()}`')
             # connection.send(b"\x00\x00\x00\x0chello world!")
-            connection.send(b"\x00\x00\x00\x0bzhangsan 18")
+            connection.send(b"\x00\x00\x00\x0bzhangsan 189")
 
     finally:
         # 关闭连接
