@@ -45,7 +45,7 @@ public:
                   // 处理参数会比较复杂, 先处理最简单的情况: 没有参数
                   auto res = fn();
                   // 获取函数的返回值, 并且序列化, 保存到result
-                  // result = "000242";
+                  // result = "42";
                   result = serialize<int>(res);
               };
     }

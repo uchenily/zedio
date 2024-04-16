@@ -56,8 +56,7 @@ public:
 
         console.info("data from rpc server: {}", resp.value().payload);
         auto data = resp.value().payload;
-        T    t0;
-        T    t = deserialize<T>(t0, data);
+        T    t = deserialize<T>(data);
         co_return t;
     }
 

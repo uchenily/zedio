@@ -68,18 +68,20 @@ template <typename T>
     requires requires(std::string_view buf) {
         { T::deserialize(buf) } -> std::convertible_to<T>;
     }
-static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
+static auto deserialize(std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
-    return T::deserialize({data.data() + 4uz, data.size() - 4uz});
+    return T::deserialize({data.data(), data.size()});
 }
 
+// 好像必须使用enable_if, 只使用requires可能是因为函数签名一样的原因会报错:
+// error: call of overloaded ‘deserialize<...>’ is ambiguous
 template <typename T>
 static typename std::enable_if<std::is_integral<T>::value, T>::type
-deserialize([[maybe_unused]] T &t0, std::string_view data) {
+deserialize(std::string_view data) {
     // requires requires { std::is_fundamental_v<T> && !std::is_class_v<T>; }
     // static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
-    std::istringstream iss({data.begin() + 4uz, data.size() - 4uz});
+    std::istringstream iss({data.begin(), data.size()});
 
     T t;
     iss >> t;
@@ -138,7 +140,7 @@ public:
         }
 
         return MessageType{
-            std::string_view{buf.begin() + 4uz, buf.begin() + 4uz + length}
+            std::string_view{buf.begin() + FIXED_LEN, buf.begin() + FIXED_LEN + length}
         };
     }
 };
@@ -183,10 +185,6 @@ class Person {
 public:
     std::string name;
     int         age;
-
-    // FIXME: 目前必须定义一个无参构造函数
-    Person()
-        : age{0} {}
 
     // 构造函数
     Person(std::string_view name, int age)
