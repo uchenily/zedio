@@ -6,6 +6,7 @@
 
 // C++
 #include <array>
+#include <concepts>
 #include <iostream>
 #include <span>
 #include <sstream>
@@ -59,6 +60,48 @@ void len_to_bytes(uint32_t value, std::span<uint8_t> bytes) {
     // std::copy(reinterpret_cast<const unsigned char *>(&value),
     //           reinterpret_cast<const unsigned char *>(&value) + sizeof(uint32_t),
     //           bytes.data());
+}
+
+template <typename T>
+// requires requires(std::string_view buf) { T::deserialize(buf)->T; }
+// requires requires(std::string_view buf) { T::deserialize(buf); }
+    requires requires(std::string_view buf) {
+        { T::deserialize(buf) } -> std::convertible_to<T>;
+    }
+static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
+    console.debug("data: `{}`, data.size: {}", data, data.size());
+    return T::deserialize({data.data() + 4uz, data.size() - 4uz});
+}
+
+template <typename T>
+static typename std::enable_if<std::is_integral<T>::value, T>::type
+deserialize([[maybe_unused]] T &t0, std::string_view data) {
+    // requires requires { std::is_fundamental_v<T> && !std::is_class_v<T>; }
+    // static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
+    console.debug("data: `{}`, data.size: {}", data, data.size());
+    std::istringstream iss({data.begin() + 4uz, data.size() - 4uz});
+
+    T t;
+    iss >> t;
+    console.debug("deserialize: {}", t);
+    return t;
+}
+
+template <typename T>
+    requires requires(T t) {
+        // { t.serialize() } -> std::convertible_to<std::string_view>;
+        t.serialize();
+    }
+static auto serialize(T t) -> std::string {
+    return t.serialize();
+}
+
+template <typename T>
+    requires requires { std::is_fundamental_v<T>; }
+static auto serialize(T t) -> std::string {
+    std::ostringstream oss;
+    oss << t;
+    return oss.str();
 }
 
 struct RpcMessage {
@@ -140,6 +183,10 @@ class Person {
 public:
     std::string name;
     int         age;
+
+    // FIXME: 目前必须定义一个无参构造函数
+    Person()
+        : age{0} {}
 
     // 构造函数
     Person(std::string_view name, int age)

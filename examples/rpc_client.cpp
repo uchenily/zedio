@@ -24,16 +24,6 @@ using namespace zedio::async;
 using namespace zedio::example;
 using namespace zedio;
 
-template <typename T>
-static auto deserialize(std::string_view data) -> T {
-    console.debug("data: `{}`, data.size: {}", data, data.size());
-    std::istringstream iss({data.begin() + 4uz, data.size() - 4uz});
-    T                  t;
-    iss >> t;
-    console.debug("deserialize: {}", t);
-    return t;
-}
-
 class RpcClient {
 private:
     explicit RpcClient(TcpStream &&stream)
@@ -51,7 +41,6 @@ public:
     }
 
     template <typename T>
-        requires requires(std::string_view buf) { T::deserialize(buf); }
     auto call([[maybe_unused]] std::string_view method_name) -> Task<Result<T>> {
         RpcFramed         rpc_framed{std::move(stream_)};
         std::vector<char> buf(64);
@@ -67,28 +56,30 @@ public:
 
         console.info("data from rpc server: {}", resp.value().payload);
         auto data = resp.value().payload;
-        co_return T::deserialize(data);
-    }
-
-    template <typename T>
-    auto call(std::string_view method_name) -> Task<Result<T>> {
-        RpcFramed         rpc_framed{std::move(stream_)};
-        std::vector<char> buf(64);
-
-        RpcMessage req{method_name};
-        co_await rpc_framed.write_frame<RpcMessage>(req);
-
-        auto resp = co_await rpc_framed.read_frame<RpcMessage>(buf);
-        if (!resp) {
-            console.error("receive rpc response failed");
-            co_return std::unexpected{make_zedio_error(Error::Unknown)};
-        }
-
-        console.info("data from rpc server: {}", resp.value().payload);
-        auto data = resp.value().payload;
-        T    t = deserialize<T>(data);
+        T    t0;
+        T    t = deserialize<T>(t0, data);
         co_return t;
     }
+
+    // template <typename T>
+    // auto call(std::string_view method_name) -> Task<Result<T>> {
+    //     RpcFramed         rpc_framed{std::move(stream_)};
+    //     std::vector<char> buf(64);
+    //
+    //     RpcMessage req{method_name};
+    //     co_await rpc_framed.write_frame<RpcMessage>(req);
+    //
+    //     auto resp = co_await rpc_framed.read_frame<RpcMessage>(buf);
+    //     if (!resp) {
+    //         console.error("receive rpc response failed");
+    //         co_return std::unexpected{make_zedio_error(Error::Unknown)};
+    //     }
+    //
+    //     console.info("data from rpc server: {}", resp.value().payload);
+    //     auto data = resp.value().payload;
+    //     T    t = deserialize<T>(data);
+    //     co_return t;
+    // }
 
 private:
     TcpStream stream_;
