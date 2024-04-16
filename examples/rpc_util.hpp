@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zedio/core.hpp"
+#include "zedio/log.hpp"
 #include "zedio/net.hpp"
 
 // C++
@@ -14,23 +15,45 @@
 // C
 #include <cstdint>
 
+// Linux
+#include <arpa/inet.h>
+#include <netinet/in.h>
+
 namespace zedio::example {
 
 using namespace zedio::async;
 using namespace zedio::net;
+using namespace zedio::log;
+
+static constexpr size_t FIXED_LEN{4uz};
+
+auto bytes_to_len(std::span<char> bytes) -> uint32_t {
+    // ntohl()
+    uint32_t value = 0;
+    value |= static_cast<uint32_t>(bytes[0]) << 24;
+    value |= static_cast<uint32_t>(bytes[1]) << 16;
+    value |= static_cast<uint32_t>(bytes[2]) << 8;
+    value |= static_cast<uint32_t>(bytes[3]);
+    return value;
+}
+
+void len_to_bytes(uint32_t value, std::span<uint8_t> bytes) {
+    // ntonl()
+    bytes[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
+    bytes[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
+    bytes[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
+    bytes[3] = static_cast<uint8_t>(value & 0xFF);
+}
 
 struct RpcMessage {
     std::string_view payload;
 
     void write_to(std::string &buf) const {
-        std::array<unsigned char, 4> msg_len{};
+        std::array<unsigned char, 4> bytes{};
         uint32_t                     length = payload.size();
 
-        msg_len[3] = length & 0xFF;
-        msg_len[2] = (length >> 8) & 0xFF;
-        msg_len[1] = (length >> 16) & 0xFF;
-        msg_len[0] = (length >> 24) & 0xFF;
-        buf.append(std::string_view{reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
+        len_to_bytes(length, bytes);
+        buf.append(std::string_view{reinterpret_cast<char *>(bytes.data()), bytes.size()});
         buf.append(payload);
     }
 };
@@ -44,12 +67,14 @@ public:
         return buf;
     }
     auto decode(std::span<char> buf) -> Result<MessageType> {
-        if (buf.size() < 4uz) {
+        if (buf.size() < FIXED_LEN) {
+            console.error("buf.size less then fixed length");
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
-        auto length = buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3];
+        auto length = bytes_to_len(buf);
 
-        if (buf.size() < 4uz + length) {
+        if (buf.size() - FIXED_LEN < length) {
+            console.error("buf.size less then fixed length + message length");
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
 
@@ -68,6 +93,7 @@ public:
 public:
     // 读取一个完整的数据帧
     template <typename FrameType>
+    // TODO: vector?
     auto read_frame(std::vector<char> &buf) -> Task<Result<FrameType>> {
         // 读取数据
         co_await stream_.read(buf);
@@ -102,8 +128,8 @@ public:
 
     // 构造函数
     Person(std::string_view name, int age)
-        : name(name)
-        , age(age) {}
+        : name{name}
+        , age{age} {}
 
     // 序列化函数
     [[nodiscard]]
@@ -114,6 +140,7 @@ public:
     }
 
     // 反序列化函数
+    [[nodiscard]]
     static auto deserialize(std::string_view data) -> Person {
         std::istringstream iss({data.begin(), data.size()});
         std::string        name;
@@ -125,21 +152,19 @@ public:
 
 using RpcFramed = Framed<RpcCodec<RpcMessage>>;
 
-#if 0
-auto main() -> int {
-    // 创建一个 Person 对象
-    Person person("zhangsan", 18);
-
-    // 序列化对象
-    std::string serialized_data = person.serialize();
-    std::cout << "Serialized data: `" << serialized_data << "`\n";
-
-    // 反序列化对象
-    Person new_person = Person::deserialize(serialized_data);
-    std::cout << "New Person name: " << new_person.name << ", age: " << new_person.age << '\n';
-
-    return 0;
-}
-#endif
+// auto main() -> int {
+//     // 创建一个 Person 对象
+//     Person person("zhangsan", 18);
+//
+//     // 序列化对象
+//     std::string serialized_data = person.serialize();
+//     std::cout << "Serialized data: `" << serialized_data << "`\n";
+//
+//     // 反序列化对象
+//     Person new_person = Person::deserialize(serialized_data);
+//     std::cout << "New Person name: " << new_person.name << ", age: " << new_person.age << '\n';
+//
+//     return 0;
+// }
 
 } // namespace zedio::example
