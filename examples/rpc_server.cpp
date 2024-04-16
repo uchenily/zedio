@@ -15,32 +15,31 @@
 #include <string_view>
 #include <utility>
 
+#include "examples/rpc_util.hpp"
+
 using namespace zedio::log;
 using namespace zedio::io;
 using namespace zedio::net;
 using namespace zedio::async;
+using namespace zedio::example;
 using namespace zedio;
-
-#include "rpc_util.hpp"
-
-using RpcFramed = Framed<RpcCodec<RpcResponse, RpcRequest>>;
 
 auto process(TcpStream stream) -> Task<void> {
     RpcFramed         rpc_framed{std::move(stream)};
     std::vector<char> buf(64);
 
-    auto req = co_await rpc_framed.read_frame<RpcRequest>(buf);
+    auto req = co_await rpc_framed.read_frame<RpcMessage>(buf);
     if (!req) {
         console.error("read rpc request failed: {}", req.error().message());
         co_return;
     }
 
-    [[maybe_unused]] auto method_name = req.value().method;
+    [[maybe_unused]] auto method_name = req.value().payload;
     // TODO: run method by name
-    Person      p{"zhangsan", 18};
-    auto        data = p.serialize();
-    RpcResponse resp{data};
-    co_await rpc_framed.write_frame<RpcResponse>(resp);
+    Person     p{"zhangsan", 18};
+    auto       data = p.serialize();
+    RpcMessage resp{data};
+    co_await rpc_framed.write_frame<RpcMessage>(resp);
 }
 
 auto server() -> Task<void> {

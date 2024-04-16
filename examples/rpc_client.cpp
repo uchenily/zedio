@@ -15,15 +15,14 @@
 #include <string_view>
 #include <utility>
 
+#include "examples/rpc_util.hpp"
+
 using namespace zedio::log;
 using namespace zedio::io;
 using namespace zedio::net;
 using namespace zedio::async;
+using namespace zedio::example;
 using namespace zedio;
-
-#include "rpc_util.hpp"
-
-using RpcFramed = Framed<RpcCodec<RpcRequest, RpcResponse>>;
 
 class RpcClient {
 private:
@@ -47,10 +46,10 @@ public:
         RpcFramed         rpc_framed{std::move(stream_)};
         std::vector<char> buf(64);
 
-        RpcRequest req{.method = method_name};
-        co_await rpc_framed.write_frame<RpcRequest>(req);
+        RpcMessage req{method_name};
+        co_await rpc_framed.write_frame<RpcMessage>(req);
 
-        auto resp = co_await rpc_framed.read_frame<RpcResponse>(buf);
+        auto resp = co_await rpc_framed.read_frame<RpcMessage>(buf);
         if (!resp) {
             console.error("receive rpc response failed");
             co_return std::unexpected{make_zedio_error(Error::Unknown)};

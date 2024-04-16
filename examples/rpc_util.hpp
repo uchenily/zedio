@@ -1,8 +1,12 @@
 #pragma once
 
+#include "zedio/core.hpp"
+#include "zedio/net.hpp"
+
 // C++
 #include <array>
 #include <iostream>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -10,26 +14,15 @@
 // C
 #include <cstdint>
 
-struct RpcRequest {
-    std::string_view method;
+namespace zedio::example {
 
-    auto write_to(std::string &buf) const {
-        std::array<unsigned char, 4> msg_len{};
-        uint32_t                     length = method.size();
+using namespace zedio::async;
+using namespace zedio::net;
 
-        msg_len[3] = length & 0xFF;
-        msg_len[2] = (length >> 8) & 0xFF;
-        msg_len[1] = (length >> 16) & 0xFF;
-        msg_len[0] = (length >> 24) & 0xFF;
-        buf.append(std::string_view{reinterpret_cast<char *>(msg_len.data()), msg_len.size()});
-        buf.append(method);
-    }
-};
-
-struct RpcResponse {
+struct RpcMessage {
     std::string_view payload;
 
-    auto write_to(std::string &buf) {
+    void write_to(std::string &buf) const {
         std::array<unsigned char, 4> msg_len{};
         uint32_t                     length = payload.size();
 
@@ -42,15 +35,15 @@ struct RpcResponse {
     }
 };
 
-template <typename MessageType1, typename MessageType2>
+template <typename MessageType>
 class RpcCodec {
 public:
-    auto encode(MessageType1 &message) -> std::string {
+    auto encode(MessageType &message) -> std::string {
         std::string buf;
         message.write_to(buf);
         return buf;
     }
-    auto decode([[maybe_unused]] std::span<char> buf) -> Result<MessageType2> {
+    auto decode(std::span<char> buf) -> Result<MessageType> {
         if (buf.size() < 4uz) {
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
@@ -60,7 +53,7 @@ public:
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
 
-        return MessageType2{
+        return MessageType{
             std::string_view{buf.begin() + 4uz, buf.begin() + 4uz + length}
         };
     }
@@ -97,10 +90,6 @@ public:
         co_return;
     }
 
-    // auto take_stream() -> TcpStream {
-    //     return std::move(stream_);
-    // }
-
 private:
     Codec     codec_{};
     TcpStream stream_;
@@ -134,6 +123,8 @@ public:
     }
 };
 
+using RpcFramed = Framed<RpcCodec<RpcMessage>>;
+
 #if 0
 auto main() -> int {
     // 创建一个 Person 对象
@@ -150,3 +141,5 @@ auto main() -> int {
     return 0;
 }
 #endif
+
+} // namespace zedio::example
