@@ -7,6 +7,7 @@
 // C++
 #include <array>
 #include <concepts>
+#include <expected>
 #include <iostream>
 #include <span>
 #include <sstream>
@@ -174,7 +175,7 @@ public:
         auto read_result = co_await stream_.read(buf);
         if (!read_result) {
             console.error("read_frame :{}", read_result.error().message());
-            co_return FrameType{""};
+            co_return std::unexpected{make_sys_error(errno)};
         }
         // 解码数据
         auto res = codec_.decode(buf);
@@ -184,7 +185,8 @@ public:
     // 写入一个完整的数据帧
     template <typename FrameType>
         requires requires(FrameType msg, std::string &buf) { msg.write_to(buf); }
-    auto write_frame(FrameType &message) -> Task<void> {
+    // auto write_frame(FrameType &message) -> Task<Result<void>> { 不支持Result<void>, assert会报错
+    auto write_frame(FrameType &message) -> Task<Result<bool>> {
         // 编码数据
         auto encoded = codec_.encode(message);
         // 写入数据
@@ -192,8 +194,13 @@ public:
         // TODO: 添加一个模板方法: 一个类实现了 write_to(buf) 成员方法就可以调用
         // stream_.write(encoded);
         console.debug("write_frame encoded: `{}`, length: {}", encoded, encoded.size());
-        co_await stream_.write(encoded);
-        co_return;
+        auto write_result = co_await stream_.write(encoded);
+        if (!write_result) {
+            console.error("write_frame error: {}", write_result.error().message());
+            co_return std::unexpected{
+                make_zedio_error(Error::Unknown)}; // make_sys_error(errno) -> Success?
+        }
+        co_return true;
     }
 
 private:

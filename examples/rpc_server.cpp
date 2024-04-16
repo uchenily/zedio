@@ -107,21 +107,27 @@ auto process(TcpStream stream, RpcServer *server) -> Task<void> {
     RpcFramed         rpc_framed{std::move(stream)};
     std::vector<char> buf(64);
 
-    auto req = co_await rpc_framed.read_frame<RpcMessage>(buf);
-    if (!req) {
-        console.error("read rpc request failed: {}", req.error().message());
-        co_return;
+    while (true) {
+        auto req = co_await rpc_framed.read_frame<RpcMessage>(buf);
+        if (!req) {
+            console.error("read rpc request failed: {}", req.error().message());
+            co_return;
+        }
+
+        [[maybe_unused]] auto method_name = req.value().payload;
+        // // TODO: run method by name
+        // Person     p{"zhangsan", 18};
+        // auto       data = p.serialize();
+        // RpcMessage resp{data};
+
+        auto       result = server->run_handler(method_name);
+        RpcMessage resp{result};
+        auto       res = co_await rpc_framed.write_frame<RpcMessage>(resp);
+        if (!res) {
+            console.error("write_frame error {}", res.error().message());
+            co_return;
+        }
     }
-
-    [[maybe_unused]] auto method_name = req.value().payload;
-    // // TODO: run method by name
-    // Person     p{"zhangsan", 18};
-    // auto       data = p.serialize();
-    // RpcMessage resp{data};
-
-    auto       result = server->run_handler(method_name);
-    RpcMessage resp{result};
-    co_await rpc_framed.write_frame<RpcMessage>(resp);
 }
 
 auto main() -> int {
