@@ -143,6 +143,9 @@ public:
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
         auto length = bytes_to_len(buf);
+        console.debug("decode buf:`{}`, bytes_to_len: {}",
+                      std::string_view{buf.data(), buf.size()},
+                      length);
 
         if (buf.size() - FIXED_LEN < length) {
             console.error("buf.size less then fixed length + message length");
@@ -168,7 +171,11 @@ public:
     template <typename FrameType>
     auto read_frame(std::span<char> buf) -> Task<Result<FrameType>> {
         // 读取数据
-        co_await stream_.read(buf);
+        auto read_result = co_await stream_.read(buf);
+        if (!read_result) {
+            console.error("read_frame :{}", read_result.error().message());
+            co_return FrameType{""};
+        }
         // 解码数据
         auto res = codec_.decode(buf);
         co_return res;
@@ -184,6 +191,7 @@ public:
 
         // TODO: 添加一个模板方法: 一个类实现了 write_to(buf) 成员方法就可以调用
         // stream_.write(encoded);
+        console.debug("write_frame encoded: `{}`, length: {}", encoded, encoded.size());
         co_await stream_.write(encoded);
         co_return;
     }

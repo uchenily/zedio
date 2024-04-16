@@ -41,7 +41,7 @@ public:
     }
 
     template <typename T>
-    auto call([[maybe_unused]] std::string_view method_name) -> Task<Result<T>> {
+    auto call(std::string_view method_name) -> Task<Result<T>> {
         RpcFramed         rpc_framed{std::move(stream_)};
         std::vector<char> buf(64);
 
@@ -59,26 +59,6 @@ public:
         T    t = deserialize<T>(data);
         co_return t;
     }
-
-    // template <typename T>
-    // auto call(std::string_view method_name) -> Task<Result<T>> {
-    //     RpcFramed         rpc_framed{std::move(stream_)};
-    //     std::vector<char> buf(64);
-    //
-    //     RpcMessage req{method_name};
-    //     co_await rpc_framed.write_frame<RpcMessage>(req);
-    //
-    //     auto resp = co_await rpc_framed.read_frame<RpcMessage>(buf);
-    //     if (!resp) {
-    //         console.error("receive rpc response failed");
-    //         co_return std::unexpected{make_zedio_error(Error::Unknown)};
-    //     }
-    //
-    //     console.info("data from rpc server: {}", resp.value().payload);
-    //     auto data = resp.value().payload;
-    //     T    t = deserialize<T>(data);
-    //     co_return t;
-    // }
 
 private:
     TcpStream stream_;
