@@ -28,21 +28,37 @@ using namespace zedio::log;
 static constexpr size_t FIXED_LEN{4uz};
 
 auto bytes_to_len(std::span<char> bytes) -> uint32_t {
-    // ntohl()
     uint32_t value = 0;
     value |= static_cast<uint32_t>(bytes[0]) << 24;
     value |= static_cast<uint32_t>(bytes[1]) << 16;
     value |= static_cast<uint32_t>(bytes[2]) << 8;
     value |= static_cast<uint32_t>(bytes[3]);
     return value;
+
+    // // use ntohl()
+    // // value |= static_cast<uint32_t>(bytes[3]) << 24;
+    // // value |= static_cast<uint32_t>(bytes[2]) << 16;
+    // // value |= static_cast<uint32_t>(bytes[1]) << 8;
+    // // value |= static_cast<uint32_t>(bytes[0]);
+    // // memcpy(&value, bytes.data(), sizeof(uint32_t));
+    // std::copy(bytes.data(),
+    //           bytes.data() + sizeof(uint32_t),
+    //           reinterpret_cast<unsigned char *>(&value));
+    // return ntohl(value);
 }
 
 void len_to_bytes(uint32_t value, std::span<uint8_t> bytes) {
-    // ntonl()
     bytes[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
     bytes[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
     bytes[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
     bytes[3] = static_cast<uint8_t>(value & 0xFF);
+
+    // // use htonl()
+    // value = htonl(value); // 转换为网络字节序
+    // // memcpy(bytes.data(), &value, sizeof(uint32_t));  // 将值拷贝到字节数组中
+    // std::copy(reinterpret_cast<const unsigned char *>(&value),
+    //           reinterpret_cast<const unsigned char *>(&value) + sizeof(uint32_t),
+    //           bytes.data());
 }
 
 struct RpcMessage {
