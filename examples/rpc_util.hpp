@@ -83,8 +83,8 @@ static auto deserialize(std::string_view data) ->
     // requires requires { std::is_fundamental_v<T> && !std::is_class_v<T>; }
     // static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
-    // std::istringstream iss({data.begin() + FIXED_LEN, data.size() - FIXED_LEN});
-    std::istringstream iss({data.begin(), data.size()});
+    std::istringstream iss({data.begin() + FIXED_LEN, data.size() - FIXED_LEN});
+    // std::istringstream iss({data.begin(), data.size()});
 
     T t;
     iss >> t;
@@ -139,6 +139,7 @@ public:
         return buf;
     }
     auto decode(std::span<char> buf) -> Result<MessageType> {
+        // FIXME: 用buf.size判断有问题
         if (buf.size() < FIXED_LEN) {
             console.error("buf.size less then fixed length");
             return std::unexpected{make_zedio_error(Error::Unknown)};
@@ -164,22 +165,38 @@ public:
 template <typename Codec>
 class Framed {
 public:
-    explicit Framed(TcpStream &&stream)
-        : stream_{std::move(stream)} {}
+    explicit Framed(TcpStream &stream)
+        : stream_{stream} {}
 
 public:
     // 读取一个完整的数据帧
     template <typename FrameType>
     auto read_frame(std::span<char> buf) -> Task<Result<FrameType>> {
         // 读取数据
-        auto read_result = co_await stream_.read(buf);
-        if (!read_result) {
-            console.error("read_frame :{}", read_result.error().message());
-            co_return std::unexpected{make_sys_error(errno)};
+        std::size_t nbytes = 0;
+        while (true) {
+            auto s = buf.subspan(nbytes, buf.size() - nbytes);
+            auto read_result = co_await stream_.read(buf);
+            if (!read_result) {
+                console.error("read_frame :{}", read_result.error().message());
+                co_return std::unexpected{make_sys_error(errno)};
+            }
+            if (read_result.value() == 0) {
+                break;
+            }
+            nbytes += read_result.value();
+            // 解码数据
+            auto readed = buf.subspan(0, nbytes);
+            auto res = codec_.decode(readed);
+            if (!res) {
+                // FIXME
+                continue;
+            }
+            co_return res;
         }
-        // 解码数据
-        auto res = codec_.decode(buf);
-        co_return res;
+
+        // co_return FrameType{""};
+        co_return std::unexpected{make_zedio_error(Error::UnexpectedEOF)};
     }
 
     // 写入一个完整的数据帧
@@ -204,8 +221,8 @@ public:
     }
 
 private:
-    Codec     codec_{};
-    TcpStream stream_;
+    Codec      codec_{};
+    TcpStream &stream_;
 };
 
 class Person {

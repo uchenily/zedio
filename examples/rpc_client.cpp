@@ -42,7 +42,10 @@ public:
 
     template <typename T>
     auto call(std::string_view method_name) -> Task<Result<T>> {
-        RpcFramed         rpc_framed{std::move(stream_)};
+        // 之前将stream_通过std::move移动到RpcFramed中, 这样直到在一次call后,
+        // 同一个client第二次执行call时, TcpStream已经被析构了, 所以服务端co_await stream_.read(xx)
+        // 返回值大小为0(读取的字节数) 现在改成传入左值引用修复这个问题
+        RpcFramed         rpc_framed{stream_};
         std::vector<char> buf(64);
 
         RpcMessage req{method_name};

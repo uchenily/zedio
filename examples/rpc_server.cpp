@@ -104,13 +104,15 @@ private:
 };
 
 auto process(TcpStream stream, RpcServer *server) -> Task<void> {
-    RpcFramed         rpc_framed{std::move(stream)};
-    std::vector<char> buf(64);
+    RpcFramed rpc_framed{stream};
 
     while (true) {
+        std::vector<char> buf(64);
+
         auto req = co_await rpc_framed.read_frame<RpcMessage>(buf);
         if (!req) {
-            console.error("read rpc request failed: {}", req.error().message());
+            // console.error("read rpc request failed: {}", req.error().message());
+            console.info("client closed");
             co_return;
         }
 
@@ -127,6 +129,7 @@ auto process(TcpStream stream, RpcServer *server) -> Task<void> {
             console.error("write_frame error {}", res.error().message());
             co_return;
         }
+        console.warn("buf: {}, buf.size: {}", std::string_view{buf.data(), buf.size()}, buf.size());
     }
 }
 
