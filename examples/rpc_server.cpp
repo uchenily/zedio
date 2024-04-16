@@ -44,6 +44,7 @@ public:
                   // fn(arg1, arg2, ...);
                   // 处理参数会比较复杂, 先处理最简单的情况: 没有参数
                   fn();
+                  // 获取函数的返回值, 并且序列化, 保存到result
                   result = "000242";
               };
     }
@@ -126,8 +127,12 @@ auto main() -> int {
     SET_LOG_LEVEL(zedio::log::LogLevel::Debug);
     RpcServer server{"127.0.0.1", 9000};
     // server.register_handler("add", [](int a, int b) -> int { return a + b; });
+    server.register_handler("get_person", []() -> Person {
+        console.info("get_person called");
+        return {"zhangsan", 18};
+    });
     server.register_handler("get_int", []() -> int {
-        console.info("Be called!");
+        console.info("get_int called!");
         return 42;
     });
     server.run();
