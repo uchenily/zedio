@@ -109,8 +109,7 @@ public:
 public:
     // 读取一个完整的数据帧
     template <typename FrameType>
-    // TODO: vector?
-    auto read_frame(std::vector<char> &buf) -> Task<Result<FrameType>> {
+    auto read_frame(std::span<char> buf) -> Task<Result<FrameType>> {
         // 读取数据
         co_await stream_.read(buf);
         // 解码数据
