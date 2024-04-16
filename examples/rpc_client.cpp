@@ -91,6 +91,7 @@ auto client() -> Task<void> {
         co_return;
     }
     auto client = std::move(res.value());
+
     auto person = (co_await client.call<Person>("get_person")).value();
     console.info("get_person name={}, age={}", person.name, person.age);
 

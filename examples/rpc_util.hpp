@@ -98,9 +98,10 @@ static auto serialize(T t) -> std::string {
     return t.serialize();
 }
 
+// template <typename T>
+//     requires requires { std::is_fundamental_v<T>; }
 template <typename T>
-    requires requires { std::is_fundamental_v<T>; }
-static auto serialize(T t) -> std::string {
+static typename std::enable_if<std::is_integral<T>::value, std::string>::type serialize(T t) {
     std::ostringstream oss;
     oss << t;
     return oss.str();

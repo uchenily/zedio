@@ -46,7 +46,7 @@ public:
                   auto res = fn();
                   // 获取函数的返回值, 并且序列化, 保存到result
                   // result = "42";
-                  result = serialize<int>(res);
+                  result = serialize(res);
               };
     }
 
@@ -128,10 +128,10 @@ auto main() -> int {
     SET_LOG_LEVEL(zedio::log::LogLevel::Debug);
     RpcServer server{"127.0.0.1", 9000};
     // server.register_handler("add", [](int a, int b) -> int { return a + b; });
-    // server.register_handler("get_person", []() -> Person {
-    //     console.info("get_person called");
-    //     return {"zhangsan", 18};
-    // });
+    server.register_handler("get_person", []() -> Person {
+        console.info("get_person called");
+        return {"zhangsan", 18};
+    });
     server.register_handler("get_int", []() -> int {
         console.info("get_int called!");
         return 42;
