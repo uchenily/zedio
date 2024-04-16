@@ -19,6 +19,7 @@
 // Linux
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <type_traits>
 
 namespace zedio::example {
 
@@ -76,11 +77,12 @@ static auto deserialize(std::string_view data) -> T {
 // 好像必须使用enable_if, 只使用requires可能是因为函数签名一样的原因会报错:
 // error: call of overloaded ‘deserialize<...>’ is ambiguous
 template <typename T>
-static typename std::enable_if<std::is_integral<T>::value, T>::type
-deserialize(std::string_view data) {
+static auto deserialize(std::string_view data) ->
+    typename std::enable_if<std::is_fundamental<T>::value, T>::type {
     // requires requires { std::is_fundamental_v<T> && !std::is_class_v<T>; }
     // static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
+    // std::istringstream iss({data.begin() + FIXED_LEN, data.size() - FIXED_LEN});
     std::istringstream iss({data.begin(), data.size()});
 
     T t;
@@ -101,10 +103,17 @@ static auto serialize(T t) -> std::string {
 // template <typename T>
 //     requires requires { std::is_fundamental_v<T>; }
 template <typename T>
-static typename std::enable_if<std::is_integral<T>::value, std::string>::type serialize(T t) {
-    std::ostringstream oss;
+static auto serialize(T t) ->
+    typename std::enable_if<std::is_fundamental<T>::value, std::string>::type {
+    std::ostringstream           oss;
+    std::array<unsigned char, 4> bytes{};
+
     oss << t;
-    return oss.str();
+    auto temp = oss.str();
+    len_to_bytes(temp.size(), bytes);
+    auto res = std::string{reinterpret_cast<char *>(bytes.data()), bytes.size()};
+    res.append(temp);
+    return res;
 }
 
 struct RpcMessage {
@@ -140,6 +149,8 @@ public:
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
 
+        console.debug("!!!payload: {}",
+                      std::string_view{buf.begin() + FIXED_LEN, buf.begin() + FIXED_LEN + length});
         return MessageType{
             std::string_view{buf.begin() + FIXED_LEN, buf.begin() + FIXED_LEN + length}
         };
