@@ -64,9 +64,13 @@ void write_u32(uint32_t value, std::span<uint8_t> bytes) {
     //           bytes.data());
 }
 
+// template <typename T>
+// concept Deserializable = requires(std::string_view buf) {
+//     { T::deserialize(buf) } -> std::convertible_to<T>;
+// };
+
 template <typename T>
-// requires requires(std::string_view buf) { T::deserialize(buf)->T; }
-// requires requires(std::string_view buf) { T::deserialize(buf); }
+// or requires Deserializable<T>
     requires requires(std::string_view buf) {
         { T::deserialize(buf) } -> std::convertible_to<T>;
     }
@@ -75,16 +79,12 @@ static auto deserialize(std::string_view data) -> T {
     return T::deserialize({data.data(), data.size()});
 }
 
-// 好像必须使用enable_if, 只使用requires可能是因为函数签名一样的原因会报错:
-// error: call of overloaded ‘deserialize<...>’ is ambiguous
 template <typename T>
-static auto deserialize(std::string_view data) ->
-    typename std::enable_if<std::is_fundamental<T>::value, T>::type {
-    // requires requires { std::is_fundamental_v<T> && !std::is_class_v<T>; }
-    // static auto deserialize([[maybe_unused]] T &t0, std::string_view data) -> T {
+    requires std::is_fundamental_v<T>
+// requires requires { std::is_fundamental_v<T>; } // 这种为什么不对?
+static auto deserialize(std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
     std::istringstream iss({data.begin() + FIXED_LEN, data.size() - FIXED_LEN});
-    // std::istringstream iss({data.begin(), data.size()});
 
     T t;
     iss >> t;
@@ -94,8 +94,8 @@ static auto deserialize(std::string_view data) ->
 
 template <typename T>
     requires requires(T t) {
-        // { t.serialize() } -> std::convertible_to<std::string_view>;
-        t.serialize();
+        { t.serialize() } -> std::convertible_to<std::string_view>;
+        // t.serialize();
     }
 static auto serialize(T t) -> std::string {
     return t.serialize();
@@ -104,8 +104,8 @@ static auto serialize(T t) -> std::string {
 // template <typename T>
 //     requires requires { std::is_fundamental_v<T>; }
 template <typename T>
-static auto serialize(T t) ->
-    typename std::enable_if<std::is_fundamental<T>::value, std::string>::type {
+    requires std::is_fundamental_v<T>
+static auto serialize(T t) -> std::string {
     std::ostringstream           oss;
     std::array<unsigned char, 4> bytes{};
 
