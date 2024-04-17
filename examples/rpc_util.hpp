@@ -84,7 +84,7 @@ template <typename T>
 // requires requires { std::is_fundamental_v<T>; } // 这种为什么不对?
 static auto deserialize(std::string_view data) -> T {
     console.debug("data: `{}`, data.size: {}", data, data.size());
-    std::istringstream iss({data.begin() + FIXED_LEN, data.size() - FIXED_LEN});
+    std::istringstream iss({data.begin(), data.size()});
 
     T t;
     iss >> t;
@@ -106,15 +106,9 @@ static auto serialize(T t) -> std::string {
 template <typename T>
     requires std::is_fundamental_v<T>
 static auto serialize(T t) -> std::string {
-    std::ostringstream           oss;
-    std::array<unsigned char, 4> bytes{};
-
+    std::ostringstream oss;
     oss << t;
-    auto temp = oss.str();
-    write_u32(temp.size(), bytes);
-    auto res = std::string{reinterpret_cast<char *>(bytes.data()), bytes.size()};
-    res.append(temp);
-    return res;
+    return oss.str();
 }
 
 struct RpcMessage {
