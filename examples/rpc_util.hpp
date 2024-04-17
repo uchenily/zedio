@@ -30,7 +30,7 @@ using namespace zedio::log;
 
 static constexpr size_t FIXED_LEN{4uz};
 
-auto bytes_to_len(std::span<char> bytes) -> uint32_t {
+auto read_u32(std::span<char> bytes) -> uint32_t {
     uint32_t value = 0;
     value |= static_cast<uint32_t>(bytes[0]) << 24;
     value |= static_cast<uint32_t>(bytes[1]) << 16;
@@ -50,7 +50,7 @@ auto bytes_to_len(std::span<char> bytes) -> uint32_t {
     // return ntohl(value);
 }
 
-void len_to_bytes(uint32_t value, std::span<uint8_t> bytes) {
+void write_u32(uint32_t value, std::span<uint8_t> bytes) {
     bytes[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
     bytes[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
     bytes[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
@@ -111,7 +111,7 @@ static auto serialize(T t) ->
 
     oss << t;
     auto temp = oss.str();
-    len_to_bytes(temp.size(), bytes);
+    write_u32(temp.size(), bytes);
     auto res = std::string{reinterpret_cast<char *>(bytes.data()), bytes.size()};
     res.append(temp);
     return res;
@@ -124,7 +124,7 @@ struct RpcMessage {
         std::array<unsigned char, 4> bytes{};
         uint32_t                     length = payload.size();
 
-        len_to_bytes(length, bytes);
+        write_u32(length, bytes);
         buf.append(std::string_view{reinterpret_cast<char *>(bytes.data()), bytes.size()});
         buf.append(payload);
     }
@@ -144,7 +144,7 @@ public:
             console.error("buf.size less then fixed length");
             return std::unexpected{make_zedio_error(Error::Unknown)};
         }
-        auto length = bytes_to_len(buf);
+        auto length = read_u32(buf);
         console.debug("decode buf:`{}`, bytes_to_len: {}",
                       std::string_view{buf.data(), buf.size()},
                       length);

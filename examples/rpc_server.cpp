@@ -56,7 +56,7 @@ public:
         // map_invokers[method]("", result);
         auto it = map_invokers.find({method.data(), method.size()});
         if (it == map_invokers.end()) {
-            result = "0005error";
+            result = "<nil>";
         } else {
             it->second("", result);
         }
@@ -66,10 +66,7 @@ public:
     void run() {
         auto runtime = Runtime::create();
         runtime.block_on([this]() -> Task<void> {
-            std::string host = "127.0.0.1";
-            uint16_t    port = 9000;
-
-            auto has_addr = SocketAddr::parse("127.0.0.1", 9000);
+            auto has_addr = SocketAddr::parse(host_, port_);
             if (!has_addr) {
                 console.error(has_addr.error().message());
                 co_return;
@@ -79,7 +76,7 @@ public:
                 console.error(has_listener.error().message());
                 co_return;
             }
-            console.info("Listening on {}:{} ...", host, port);
+            console.info("Listening on {}:{} ...", host_, port_);
             auto listener = std::move(has_listener.value());
             while (true) {
                 auto has_stream = co_await listener.accept();
@@ -107,7 +104,7 @@ auto process(TcpStream stream, RpcServer *server) -> Task<void> {
     RpcFramed rpc_framed{stream};
 
     while (true) {
-        std::vector<char> buf(64);
+        std::array<char, 1024> buf{};
 
         auto req = co_await rpc_framed.read_frame<RpcMessage>(buf);
         if (!req) {
@@ -136,7 +133,6 @@ auto process(TcpStream stream, RpcServer *server) -> Task<void> {
 auto main() -> int {
     SET_LOG_LEVEL(zedio::log::LogLevel::Debug);
     RpcServer server{"127.0.0.1", 9000};
-    // server.register_handler("add", [](int a, int b) -> int { return a + b; });
     server.register_handler("get_person", []() -> Person {
         console.info("get_person called");
         return {"zhangsan", 18};
@@ -145,5 +141,7 @@ auto main() -> int {
         console.info("get_int called!");
         return 42;
     });
+    // TODO:
+    // server.register_handler("add", [](int a, int b) -> int { return a + b; });
     server.run();
 }

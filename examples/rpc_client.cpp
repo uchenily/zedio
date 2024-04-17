@@ -45,22 +45,21 @@ public:
         // 之前将stream_通过std::move移动到RpcFramed中, 这样直到在一次call后,
         // 同一个client第二次执行call时, TcpStream已经被析构了, 所以服务端co_await stream_.read(xx)
         // 返回值大小为0(读取的字节数) 现在改成传入左值引用修复这个问题
-        RpcFramed         rpc_framed{stream_};
-        std::vector<char> buf(64);
+        RpcFramed              rpc_framed{stream_};
+        std::array<char, 1024> buf{};
 
         RpcMessage req{method_name};
         co_await rpc_framed.write_frame<RpcMessage>(req);
 
         auto resp = co_await rpc_framed.read_frame<RpcMessage>(buf);
         if (!resp) {
-            console.error("receive rpc response failed");
+            console.error("receive rpc response failed: {}", resp.error().message());
             co_return std::unexpected{make_zedio_error(Error::Unknown)};
         }
 
         console.info("data from rpc server: {}", resp.value().payload);
         auto data = resp.value().payload;
-        T    t = deserialize<T>(data);
-        co_return t;
+        co_return deserialize<T>(data);
     }
 
 private:
@@ -70,7 +69,7 @@ private:
 auto client() -> Task<void> {
     auto res = co_await RpcClient::connect("127.0.0.1", 9000);
     if (!res) {
-        console.error("connect failed");
+        console.error("connect failed: {}", res.error().message());
         co_return;
     }
     auto client = std::move(res.value());
